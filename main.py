@@ -1,21 +1,32 @@
-import setup
-from getpass_asterisk.getpass_asterisk import getpass_asterisk
-from argon2 import PasswordHasher
-from argon2.exceptions import VerifyMismatchError
-import os
-from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-import pyperclip
-import subprocess
 import ctypes
+import os
 import secrets
 import string
+import subprocess
 import time
 from sqlite3 import IntegrityError
 
+import pyperclip
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
+from getpass_asterisk.getpass_asterisk import getpass_asterisk
+import smtplib
+from email.message import EmailMessage
+
+import setup
+from dotenv import load_dotenv
+
+load_dotenv()
+BREVO_EMAIL = os.getenv("BREVO_EMAIL")
+BREVO_PASSWORD = os.getenv("BREVO_PASSWORD")
+
 def clear_clipboard():
     for remaining in range(60, -1, -1):
-        print(f"\r\033[2KCleaning up the Clipboard in: {remaining}s", end="", flush=True)
+        print(
+            f"\r\033[2KCleaning up the Clipboard in: {remaining}s", end="", flush=True
+        )
         time.sleep(1)
 
     clear_terminal()
@@ -25,38 +36,38 @@ def clear_clipboard():
     ctypes.windll.user32.EmptyClipboard()
     ctypes.windll.user32.CloseClipboard()
 
+
 def clear_terminal():
-    command = 'cls' if os.name == 'nt' else 'clear'
+    command = "cls" if os.name == "nt" else "clear"
     subprocess.run(command, shell=True)
-    
+
 
 def derive_key(salt, master_password):
     kdf = Scrypt(
-    salt=salt,
-    length=32,       # 256-bit key
-    n=2**14,
-    r=8,
-    p=1,
+        salt=salt,
+        length=32,  # 256-bit key
+        n=2**14,
+        r=8,
+        p=1,
     )
 
     key = kdf.derive(master_password.encode())
     return key
 
+
 def encrypt(user, password):
     aes = AESGCM(user["key"])
     nonce = os.urandom(12)
-    ciphertext = aes.encrypt(
-        nonce,
-        password,
-        None
-    )
+    ciphertext = aes.encrypt(nonce, password, None)
     return ciphertext, nonce
+
 
 def decrypt(user, passwords):
     aes = AESGCM(user["key"])
     for value in passwords.values():
         value["password"] = aes.decrypt(value["nonce"], value["password"], None)
-    return passwords    
+    return passwords
+
 
 def get_user(username_attempt):
     cursor.execute(
@@ -65,12 +76,13 @@ def get_user(username_attempt):
         FROM users
         WHERE username = ?
         """,
-        (username_attempt,)
+        (username_attempt,),
     )
-    
+
     user = cursor.fetchone()
     if user:
         return dict(user)
+
 
 def get_passwords(user):
     cursor.execute(
@@ -81,28 +93,65 @@ def get_passwords(user):
             ON users.id = passwords.user_id
         WHERE users.username = ?
         """,
-        (user["username"],)
+        (user["username"],),
     )
     passwords = {
-        password["password_id"]: {"id": password["id"], "user_id": password["user_id"], "nonce": password["nonce"], "password": password["password"]}
+        password["password_id"]: {
+            "id": password["id"],
+            "user_id": password["user_id"],
+            "nonce": password["nonce"],
+            "password": password["password"],
+        }
         for password in cursor.fetchall()
     }
     return passwords
 
+def verify_email(recipient_email):
+    code = str(secrets.randbelow(900000) + 100000)
+    msg = EmailMessage()
+
+    msg["Subject"] = "Verification Code - (ezpass-t)"
+    msg["From"] = "noreply@ezpass-t.dev"
+    msg["To"] = recipient_email
+
+    msg.set_content(f"""
+    Your verification code is:
+
+    {code}
+    """)
+    with smtplib.SMTP("smtp-relay.brevo.com", 587) as smtp:
+        smtp.ehlo()
+        smtp.starttls()
+        smtp.ehlo()
+        smtp.login(
+            BREVO_EMAIL,
+            BREVO_PASSWORD
+        )
+        smtp.send_message(msg)
+    
+    print("A verification code was sent to your email.")
+    code_attempt = input("Code: ")
+    if code_attempt == code:
+        return True
+    else:
+        return False
+    
+
 def create_user():
     ph = PasswordHasher()
     new_username = input("NEW USERNAME: ")
+    new_email = input("NEW EMAIL: ")
     salt = os.urandom(16)
     new_master_password = input("NEW PASSWORD: ")
     confirm_master_password = input("CONFIRM NEW PASSWORD: ")
-    if new_master_password == confirm_master_password:
+    if new_master_password == confirm_master_password and verify_email(new_email):
         try:
             cursor.execute(
                 """
-                INSERT INTO users (username, salt, hash)
-                VALUES (?, ?, ?)
+                INSERT INTO users (username, email, salt, hash)
+                VALUES (?, ?, ?, ?)
                 """,
-                (new_username, salt, ph.hash(new_master_password))
+                (new_username, new_email, salt, ph.hash(new_master_password)),
             )
             conn.commit()
             print("User Created.")
@@ -111,16 +160,15 @@ def create_user():
     else:
         return
 
+
 def delete_user(user):
     confirm_deletion = input("Are you sure you want to delete your account? [y/N]: ")
     if confirm_deletion == "y":
-        cursor.execute(
-        "DELETE FROM users WHERE id = ?",
-        (user["id"],)
-        )
+        cursor.execute("DELETE FROM users WHERE id = ?", (user["id"],))
         conn.commit()
     else:
         return
+
 
 def generate_password(len=16, special_chars="?#@!$&"):
     lowercase = string.ascii_lowercase
@@ -136,15 +184,13 @@ def generate_password(len=16, special_chars="?#@!$&"):
 
     all_chars = lowercase + uppercase + digits + special_chars
 
-    password += [
-        secrets.choice(all_chars)
-        for _ in range(len - 4)
-    ]
+    password += [secrets.choice(all_chars) for _ in range(len - 4)]
 
     # Securely shuffle the characters
     secrets.SystemRandom().shuffle(password)
 
-    return ''.join(password)
+    return "".join(password)
+
 
 def login():
     login_attempts = 0
@@ -165,7 +211,9 @@ def login():
                 login_attempts += 1
         elif login_attempts >= 2:
             print("User account not found.")
-            choice_selected = input("\nWould you like to return to the main menu? [y/N]: ")
+            choice_selected = input(
+                "\nWould you like to return to the main menu? [y/N]: "
+            )
             if choice_selected == "y":
                 return None, False
         else:
@@ -173,16 +221,18 @@ def login():
             time.sleep(2)
             login_attempts += 1
 
-def display_user_menu():
-    print("""
-        ezpass/user/passwords
+
+def display_user_menu(user):
+    print(f"""
+        ezpass/{user["username"]}/passwords
         
-            1. Read / Copy
+            1. Read/Copy
             2. Create
             3. Update
             4. Delete
             
         """)
+
 
 def display_main_menu():
     print("""
@@ -193,6 +243,7 @@ def display_main_menu():
         3. Delete User
         
     """)
+
 
 def read(user, default_behavior=None):
     clear_terminal()
@@ -208,7 +259,11 @@ def read(user, default_behavior=None):
             print("ID", "\t\tNAME", "\t\t\tPASSWORD\n")
             for key, value in passwords.items():
                 current_passwords[value["id"]] = value["password"].decode()
-                print(str(value["id"]), "\t\t" + key, "\t\t\t" + value["password"].decode())
+                print(
+                    str(value["id"]),
+                    "\t\t" + key,
+                    "\t\t\t" + value["password"].decode(),
+                )
             if default_behavior == "PATCH":
                 return current_passwords, passwords
             elif default_behavior == "DEL":
@@ -224,7 +279,8 @@ def read(user, default_behavior=None):
                     return
         else:
             print("An error has occured while decrypting.")
-    
+
+
 def create(user):
     clear_terminal()
     password_id = input("Password ID: ")
@@ -239,15 +295,15 @@ def create(user):
         password = generate_password(len=len, special_chars=special_chars)
     else:
         password = generate_password()
-    
+
     ciphertext, nonce = encrypt(user, password.encode())
-    try: 
+    try:
         cursor.execute(
             """
             INSERT INTO passwords (user_id, password_id, nonce, password)
             VALUES (?, ?, ?, ?)
             """,
-            (user["id"], password_id, nonce, ciphertext)
+            (user["id"], password_id, nonce, ciphertext),
         )
         conn.commit()
     except IntegrityError:
@@ -255,12 +311,15 @@ def create(user):
         print("Password with that id already exists.")
         time.sleep(2)
 
+
 def update(user):
     passwords, unformatted_passwords = read(user, "PATCH")
     if passwords and unformatted_passwords:
         update_id = int(input("\nUpdate by ID: "))
         pyperclip.copy(passwords[update_id])
-        updated_password = input("Press (CTRL + V) to Edit, then ENTER to save changes: ")
+        updated_password = input(
+            "Press (CTRL + V) to Edit, then ENTER to save changes: "
+        )
         ciphertext, nonce = encrypt(user, updated_password.encode())
         for key, value in unformatted_passwords.items():
             if update_id == value["id"]:
@@ -273,10 +332,11 @@ def update(user):
                     WHERE user_id = ?
                         AND password_id = ?
                     """,
-                    (ciphertext, nonce, value["user_id"], key)
+                    (ciphertext, nonce, value["user_id"], key),
                 )
                 conn.commit()
         pyperclip.copy("")
+
 
 def delete(user):
     passwords, temp = read(user, "DEL")
@@ -287,7 +347,9 @@ def delete(user):
             return
         for key, value in passwords.items():
             if delete_id == value["id"]:
-                confirm_delete = input(f"Are you sure you want to delete '{key}'? [y/N]: ")
+                confirm_delete = input(
+                    f"Are you sure you want to delete '{key}'? [y/N]: "
+                )
                 if confirm_delete == "N":
                     return
                 cursor.execute(
@@ -296,9 +358,10 @@ def delete(user):
                     WHERE user_id = ?
                     AND password_id = ?
                     """,
-                    (value["user_id"], key)
+                    (value["user_id"], key),
                 )
-                conn.commit()    
+                conn.commit()
+
 
 def main():
     is_authenticated = False
@@ -319,7 +382,7 @@ def main():
                 is_authenticated = False
     while is_authenticated:
         clear_terminal()
-        display_user_menu()
+        display_user_menu(user)
         menu_selection = input("Choose an option: ")
         if menu_selection == "1":
             read(user, None)
@@ -329,7 +392,7 @@ def main():
             update(user)
         elif menu_selection == "4":
             delete(user)
-    
+
 
 if __name__ == "__main__":
     conn, cursor = setup.intialize()

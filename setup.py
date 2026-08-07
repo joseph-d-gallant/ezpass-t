@@ -1,6 +1,4 @@
 import sqlite3
-import os
-import sys
 from pathlib import Path
 
 APP_NAME = "Ezpass"
@@ -19,16 +17,18 @@ conn.execute("PRAGMA foreign_keys = ON")
 conn.row_factory = sqlite3.Row
 cursor = conn.cursor()
 
+
 def create_tables():
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL UNIQUE,
+            email TEXT NOT NULL UNIQUE,
             salt BLOB NOT NULL,
             hash TEXT NOT NULL
         )
     """)
-    
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS passwords (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -45,11 +45,10 @@ def create_tables():
     """)
     conn.commit()
 
+
 def intialize():
     try:
         create_tables()
         return conn, cursor
     except Exception as e:
         print(e)
-        
-    
