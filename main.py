@@ -65,7 +65,7 @@ def encrypt(user, password):
 def decrypt(user, passwords):
     aes = AESGCM(user["key"])
     for value in passwords.values():
-        value["password"] = aes.decrypt(value["nonce"], value["password"], None)
+        value["ciphertext"] = aes.decrypt(value["nonce"], value["ciphertext"], None)
     return passwords
 
 
@@ -96,11 +96,11 @@ def get_passwords(user):
         (user["username"],),
     )
     passwords = {
-        password["password_id"]: {
+        password["name"]: {
             "id": password["id"],
             "user_id": password["user_id"],
             "nonce": password["nonce"],
-            "password": password["password"],
+            "ciphertext": password["ciphertext"],
         }
         for password in cursor.fetchall()
     }
@@ -144,7 +144,8 @@ def create_user():
     salt = os.urandom(16)
     new_master_password = input("NEW PASSWORD: ")
     confirm_master_password = input("CONFIRM NEW PASSWORD: ")
-    if new_master_password == confirm_master_password and verify_email(new_email):
+    # if new_master_password == confirm_master_password and verify_email(new_email):
+    if new_master_password == confirm_master_password:
         try:
             cursor.execute(
                 """
@@ -258,11 +259,11 @@ def read(user, default_behavior=None):
             current_passwords = {}
             print("ID", "\t\tNAME", "\t\t\tPASSWORD\n")
             for key, value in passwords.items():
-                current_passwords[value["id"]] = value["password"].decode()
+                current_passwords[value["id"]] = value["ciphertext"].decode()
                 print(
                     str(value["id"]),
                     "\t\t" + key,
-                    "\t\t\t" + value["password"].decode(),
+                    "\t\t\t" + value["ciphertext"].decode(),
                 )
             if default_behavior == "PATCH":
                 return current_passwords, passwords
@@ -283,7 +284,7 @@ def read(user, default_behavior=None):
 
 def create(user):
     clear_terminal()
-    password_id = input("Password ID: ")
+    password_name = input("Password Name: ")
     pref = input("Configure password generation manually? [y/N]: ")
     len = 0
     if pref == "y":
@@ -300,15 +301,15 @@ def create(user):
     try:
         cursor.execute(
             """
-            INSERT INTO passwords (user_id, password_id, nonce, password)
+            INSERT INTO passwords (user_id, name, nonce, ciphertext)
             VALUES (?, ?, ?, ?)
             """,
-            (user["id"], password_id, nonce, ciphertext),
+            (user["id"], password_name, nonce, ciphertext),
         )
         conn.commit()
     except IntegrityError:
         clear_terminal()
-        print("Password with that id already exists.")
+        print("Password with that name already exists.")
         time.sleep(2)
 
 
@@ -327,10 +328,10 @@ def update(user):
                 cursor.execute(
                     """
                     UPDATE passwords
-                    SET password = ?,
+                    SET ciphertext = ?,
                         nonce = ?
                     WHERE user_id = ?
-                        AND password_id = ?
+                        AND name = ?
                     """,
                     (ciphertext, nonce, value["user_id"], key),
                 )
@@ -345,10 +346,10 @@ def delete(user):
             delete_id = int(input("\nDelete by ID: "))
         except ValueError:
             return
-        for key, value in passwords.items():
+        for password_name, value in passwords.items():
             if delete_id == value["id"]:
                 confirm_delete = input(
-                    f"Are you sure you want to delete '{key}'? [y/N]: "
+                    f"Are you sure you want to delete '{password_name}'? [y/N]: "
                 )
                 if confirm_delete == "N":
                     return
@@ -356,9 +357,9 @@ def delete(user):
                     """
                     DELETE FROM passwords
                     WHERE user_id = ?
-                    AND password_id = ?
+                    AND name = ?
                     """,
-                    (value["user_id"], key),
+                    (value["user_id"], password_name),
                 )
                 conn.commit()
 

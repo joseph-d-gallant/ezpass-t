@@ -33,14 +33,14 @@ def create_tables():
         CREATE TABLE IF NOT EXISTS passwords (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
             nonce BLOB,
-            password_id TEXT NOT NULL,
-            password BLOB NOT NULL,
+            ciphertext BLOB NOT NULL,
             
             FOREIGN KEY(user_id) 
                 REFERENCES users(id)
                 ON DELETE CASCADE,
-            UNIQUE (user_id, password_id)
+            UNIQUE (user_id, name)
         )
     """)
     conn.commit()
