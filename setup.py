@@ -1,7 +1,7 @@
 import sqlite3
 from pathlib import Path
 
-APP_NAME = "Ezpass"
+APP_NAME = "ezpass-t"
 
 # Windows user-specific application data folder
 data_dir = Path.home() / "AppData" / "Local" / APP_NAME / "data"
