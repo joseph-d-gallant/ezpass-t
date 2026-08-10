@@ -258,13 +258,12 @@ def read(user, default_behavior=None):
         if passwords:
             current_passwords = {}
             print("ID", "\t\tNAME", "\t\t\tPASSWORD\n")
+            # bug: sort passwords by lowest to highest ID
             for key, value in passwords.items():
                 current_passwords[value["id"]] = value["ciphertext"].decode()
-                print(
-                    str(value["id"]),
-                    "\t\t" + key,
-                    "\t\t\t" + value["ciphertext"].decode(),
-                )
+                print(str(value["id"]), end="")
+                print("\t\t" + key, end="")
+                print("\t\t\t" + value["ciphertext"].decode())
             if default_behavior == "PATCH":
                 return current_passwords, passwords
             elif default_behavior == "DEL":
