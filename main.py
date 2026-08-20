@@ -4,9 +4,8 @@ import secrets
 import string
 import subprocess
 import time
-from sqlite3 import IntegrityError
 
-import pyperclip
+from db.database import Database
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -14,387 +13,382 @@ from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 from getpass_asterisk.getpass_asterisk import getpass_asterisk
 import smtplib
 from email.message import EmailMessage
-
-import setup
+import time
+import questionary
+from datetime import datetime
+from questionary import ValidationError, Choice
 from dotenv import load_dotenv
+from dataclasses import dataclass, field
+from typing import Callable, Any
+
+from db.repositories import UserRepository, PasswordRepository
+from models import CreateUserFieldGroup, LoginFieldGroup, Session, User, Password, FieldGroup, Vault, Menu
+from prompt_toolkit import PromptSession
+from prompt_toolkit.key_binding.key_bindings import Binding
+from prompt_toolkit.key_binding import KeyBindings, merge_key_bindings
 
 load_dotenv()
-BREVO_EMAIL = os.getenv("BREVO_EMAIL")
-BREVO_PASSWORD = os.getenv("BREVO_PASSWORD")
 
-def clear_clipboard():
-    for remaining in range(60, -1, -1):
-        print(
-            f"\r\033[2KCleaning up the Clipboard in: {remaining}s", end="", flush=True
-        )
-        time.sleep(1)
-
-    clear_terminal()
-    print("Clipboard Cleared!")
-    time.sleep(1)
-    ctypes.windll.user32.OpenClipboard(0)
-    ctypes.windll.user32.EmptyClipboard()
-    ctypes.windll.user32.CloseClipboard()
-
-
-def clear_terminal():
-    command = "cls" if os.name == "nt" else "clear"
-    subprocess.run(command, shell=True)
-
-
-def derive_key(salt, master_password):
-    kdf = Scrypt(
-        salt=salt,
-        length=32,  # 256-bit key
-        n=2**14,
-        r=8,
-        p=1,
-    )
-
-    key = kdf.derive(master_password.encode())
-    return key
-
-
-def encrypt(user, password):
-    aes = AESGCM(user["key"])
-    nonce = os.urandom(12)
-    ciphertext = aes.encrypt(nonce, password, None)
-    return ciphertext, nonce
-
-
-def decrypt(user, passwords):
-    aes = AESGCM(user["key"])
-    for value in passwords.values():
-        value["ciphertext"] = aes.decrypt(value["nonce"], value["ciphertext"], None)
-    return passwords
-
-
-def get_user(username_attempt):
-    cursor.execute(
-        """
-        SELECT *
-        FROM users
-        WHERE username = ?
-        """,
-        (username_attempt,),
-    )
-
-    user = cursor.fetchone()
-    if user:
-        return dict(user)
-
-
-def get_passwords(user):
-    cursor.execute(
-        """
-        SELECT passwords.*
-        FROM users
-        JOIN passwords
-            ON users.id = passwords.user_id
-        WHERE users.username = ?
-        """,
-        (user["username"],),
-    )
-    passwords = {
-        password["name"]: {
-            "id": password["id"],
-            "user_id": password["user_id"],
-            "nonce": password["nonce"],
-            "ciphertext": password["ciphertext"],
-        }
-        for password in cursor.fetchall()
-    }
-    return passwords
-
-def verify_email(recipient_email):
-    code = str(secrets.randbelow(900000) + 100000)
-    msg = EmailMessage()
-
-    msg["Subject"] = "Verification Code - (ezpass-t)"
-    msg["From"] = "noreply@ezpass-t.dev"
-    msg["To"] = recipient_email
-
-    msg.set_content(f"""
-    Your verification code is:
-
-    {code}
-    """)
-    with smtplib.SMTP("smtp-relay.brevo.com", 587) as smtp:
-        smtp.ehlo()
-        smtp.starttls()
-        smtp.ehlo()
-        smtp.login(
-            BREVO_EMAIL,
-            BREVO_PASSWORD
-        )
-        smtp.send_message(msg)
+class Client:
+    SESSION_TIMEOUT = 10 * 60
     
-    print("A verification code was sent to your email.")
-    code_attempt = input("Code: ")
-    if code_attempt == code:
+    def __init__(self, user_repo: UserRepository, password_repo: PasswordRepository):
+        self.user_repo = user_repo
+        self.password_repo = password_repo
+        self.session = None
+    
+    def derive_secret_key(self, salt: bytes, master_password: str):
+        kdf = Scrypt(
+            salt=salt,
+            length=32,  # 256-bit key
+            n=2**14,
+            r=8,
+            p=1,
+        )
+    
+        secret_key = kdf.derive(master_password.encode())
+        return secret_key
+    
+    def encrypt_plaintext(self, nonce: bytes, plaintext: str):
+        aes = AESGCM(self.session.secret_key)
+        return aes.encrypt(nonce, plaintext, None)
+    
+    def decrypt_ciphertext(self, nonce: bytes, ciphertext: bytes) -> str:
+        aes = AESGCM(self.session.secret_key)
+        return aes.decrypt(nonce, ciphertext, None)
+    
+    def generate_password(self, length, include):
+        lowercase = string.ascii_lowercase
+        uppercase = string.ascii_uppercase
+        digits = string.digits
+        password = [
+            secrets.choice(lowercase),
+            secrets.choice(uppercase),
+            secrets.choice(digits),
+            secrets.choice(include),
+        ]
+        all_chars = lowercase + uppercase + digits + include
+        password += [secrets.choice(all_chars) for _ in range(length - 4)]
+        # Securely shuffle the characters
+        secrets.SystemRandom().shuffle(password)
+        return "".join(password)
+    
+    def create_vault(self, user: User) -> Vault:
+        passwords = self.password_repo.get_by_username(user.username)
+        vault = Vault()
+        for password in passwords:
+            vault.add(password)
+        return vault
+
+    def get_passwords(self):
+        passwords = {}
+        for password in self.session.vault.passwords.values():
+            plaintext = self.decrypt_ciphertext(password.nonce, password.ciphertext).decode()
+            passwords[password.id] = {
+                "name": password.name, 
+                "password": plaintext,
+                "created_at": datetime.fromtimestamp(password.created_at)
+            }
+        
+        return passwords 
+              
+    def create_password(self, name: str, length: int = 10, include: str = "?!#@$"):
+        nonce = os.urandom(12)
+        plaintext = self.generate_password(length, include)
+        ciphertext = self.encrypt_plaintext(nonce, plaintext.encode())
+        password = self.password_repo.create(Password(None, self.session.user.id, name, nonce, ciphertext))
+        if password:
+            self.session.vault.add(password)
+
+    def update_password(self, password_id: int, plaintext: str):
+        nonce = os.urandom(12)
+        ciphertext = self.encrypt_plaintext(nonce, plaintext.encode())
+        password = self.session.vault.passwords[password_id]
+        password.nonce = nonce
+        password.ciphertext = ciphertext
+        self.password_repo.update_by_id(password)
+    
+    def delete_password(self, password_id: int):
+        if self.password_repo.delete_by_id(self.session.vault.passwords[password_id]):
+            del self.session.vault.passwords[password_id]
+        
+    def verify_email(self, recipient_email: str):
         return True
-    else:
-        return False
+        code = str(secrets.randbelow(900000) + 100000)
+        msg = EmailMessage()
     
-
-def create_user():
-    ph = PasswordHasher()
-    new_username = input("NEW USERNAME: ")
-    new_email = input("NEW EMAIL: ")
-    salt = os.urandom(16)
-    new_master_password = input("NEW PASSWORD: ")
-    confirm_master_password = input("CONFIRM NEW PASSWORD: ")
-    # if new_master_password == confirm_master_password and verify_email(new_email):
-    if new_master_password == confirm_master_password:
-        try:
-            cursor.execute(
-                """
-                INSERT INTO users (username, email, salt, hash)
-                VALUES (?, ?, ?, ?)
-                """,
-                (new_username, new_email, salt, ph.hash(new_master_password)),
+        msg["Subject"] = "Verification Code - (ezpass-t)"
+        msg["From"] = "noreply@ezpass-t.dev"
+        msg["To"] = recipient_email
+    
+        msg.set_content(f"""
+        Your verification code is:
+    
+        {code}
+        """)
+        with smtplib.SMTP("smtp-relay.brevo.com", 587) as smtp:
+            smtp.ehlo()
+            smtp.starttls()
+            smtp.ehlo()
+            smtp.login(
+                BREVO_EMAIL,
+                BREVO_PASSWORD
             )
-            conn.commit()
-            print("User Created.")
-        except IntegrityError:
-            print("Username exists.")
-    else:
-        return
+            smtp.send_message(msg)
+        
+        print("A verification code was sent to your email.")
+        code_attempt = input("Code: ")
+        if code_attempt == code:
+            return True
+        else:
+            return False
 
-
-def delete_user(user):
-    confirm_deletion = input("Are you sure you want to delete your account? [y/N]: ")
-    if confirm_deletion == "y":
-        cursor.execute("DELETE FROM users WHERE id = ?", (user["id"],))
-        conn.commit()
-    else:
-        return
-
-
-def generate_password(len=16, special_chars="?#@!$&"):
-    lowercase = string.ascii_lowercase
-    uppercase = string.ascii_uppercase
-    digits = string.digits
-
-    password = [
-        secrets.choice(lowercase),
-        secrets.choice(uppercase),
-        secrets.choice(digits),
-        secrets.choice(special_chars),
-    ]
-
-    all_chars = lowercase + uppercase + digits + special_chars
-
-    password += [secrets.choice(all_chars) for _ in range(len - 4)]
-
-    # Securely shuffle the characters
-    secrets.SystemRandom().shuffle(password)
-
-    return "".join(password)
-
-
-def login():
-    login_attempts = 0
-    while True:
-        clear_terminal()
-        username_attempt = input("\nUSERNAME: ")
-        user = get_user(username_attempt)
+    def is_authenticated(self):
+        if self.session is None:
+            return False
+         
+        return (
+            self.session.authenticated 
+            and time.monotonic() - self.session.last_active
+            < self.SESSION_TIMEOUT
+        )
+    
+    def login(self, login_field_group: LoginFieldGroup) -> bool:
+        user = self.user_repo.get_by_username(login_field_group.username_field.value)
         if user:
-            master_password_attempt = getpass_asterisk("PASSWORD: ")
-            ph = PasswordHasher()
-            stored_hash = user["hash"]
             try:
-                result = ph.verify(stored_hash, master_password_attempt)
-                user["master"] = master_password_attempt
-                return user, result
+                ph = PasswordHasher()
+                result = ph.verify(user.hash, login_field_group.password_field.value)
+                secret_key = self.derive_secret_key(user.salt, login_field_group.password_field.value)
+                del login_field_group #Not secure, consider a different language for clearing sensitive data.
+                vault = self.create_vault(user)
+                self.session = Session(user, secret_key, vault, time.monotonic(), True)
+                return result
             except VerifyMismatchError:
                 print("Invalid Password.")
-                login_attempts += 1
-        elif login_attempts >= 2:
-            print("User account not found.")
-            choice_selected = input(
-                "\nWould you like to return to the main menu? [y/N]: "
-            )
-            if choice_selected == "y":
-                return None, False
         else:
-            print("User account not found.")
-            time.sleep(2)
-            login_attempts += 1
-
-
-def display_user_menu(user):
-    print(f"""
-        ezpass/{user["username"]}/passwords
-        
-            1. Read/Copy
-            2. Create
-            3. Update
-            4. Delete
-            
-        """)
-
-
-def display_main_menu():
-    print("""
-    ezpass/main
+            print("User Not Found.")
+            return False
     
-        1. Login
-        2. Create New User
-        3. Delete User
+    def logout(self):
+        self.session = None
+    
+    def create_user(self, create_field_group: CreateUserFieldGroup):
+        ph = PasswordHasher()
+        salt = os.urandom(16)
+        user = User(
+            id=None,
+            username=create_field_group.username_field.value,
+            email=create_field_group.email_field.value,
+            salt=salt,
+            hash=ph.hash(create_field_group.password_field.value)
+        )
+        result = self.user_repo.create(user)
+        print(result)
+    
+    def delete_user(self):
+        pass
         
-    """)
-
-
-def read(user, default_behavior=None):
-    clear_terminal()
-    passwords = get_passwords(user)
-    if not passwords:
-        print("Hmmm, it looks like you don't have any passwords yet.")
-        time.sleep(2)
-        return None, None
-    else:
-        passwords = decrypt(user, passwords)
-        if passwords:
-            current_passwords = {}
-            print("ID", "\t\tNAME", "\t\t\tPASSWORD\n")
-            # bug: sort passwords by lowest to highest ID
-            for key, value in passwords.items():
-                current_passwords[value["id"]] = value["ciphertext"].decode()
-                print(str(value["id"]), end="")
-                print("\t\t" + key, end="")
-                print("\t\t\t" + value["ciphertext"].decode())
-            if default_behavior == "PATCH":
-                return current_passwords, passwords
-            elif default_behavior == "DEL":
-                return passwords, True
+class TerminalUI:
+    
+    #Could create hook to generate values as needed.
+    MENU_CONFIG = {
+        "root_menu": {
+            "title": "ezpass",
+            "choices": [
+                {"title": "Login", "action": "login"},
+                {"title": "Create User", "action": "create_user"},
+                {"title": "Delete User", "action": "delete_user"}
+            ]
+        },
+        "user_menu": {
+            "title": "ezpass/user",
+            "choices": [
+                {"title": "View", "action": "view_passwords"},
+                {"title": "Create", "action": "create_password"},
+                {"title": "Update", "action": "update_password"},
+                {"title": "Delete", "action": "delete_password"}
+            ]
+        }
+    }
+    
+    NAV_CONTROLS = "            [ ← Back  ↑ Up / ↓ Down  Select → ]"
+    
+    def __init__(self, client: Client):
+        self.client = client
+        self.root_menu: Menu
+        self.user_menu: Menu
+        self.exit_flag = False
+        
+    def add_custom_bindings(self, question: questionary.Question):
+        binding = Binding(
+            keys=("left",),
+            handler=lambda event: event.app.exit(result=None),
+            eager=True,
+        )
+        question.application.key_bindings.bindings.insert(0, binding)
+        
+        return question
+    
+    def get_fields(self, field_group: FieldGroup) -> FieldGroup | None:
+        counter = 0
+        attrs = list(vars(field_group).items())
+        while counter < len(vars(field_group)):
+            value = self.add_custom_bindings(attrs[counter][1].event).ask()
+            field = attrs[counter][1]
+            if value == None and counter == 0:
+                field.value = None
+                return None
+            elif value == None:
+                field.value = None
+                print("\033[1A\033[2K", end="")
+                print("\033[1A\033[2K", end="")
+                counter -= 1
             else:
-                try:
-                    copy_id = int(input("\nCopy by ID: "))
-                    pyperclip.copy(current_passwords[copy_id])
-                    clear_terminal()
-                    print("\nCopied to clipboard!")
-                    clear_clipboard()
-                except ValueError:
-                    return
-        else:
-            print("An error has occured while decrypting.")
-
-
-def create(user):
-    clear_terminal()
-    password_name = input("Password Name: ")
-    pref = input("Configure password generation manually? [y/N]: ")
-    len = 0
-    if pref == "y":
-        while len < 12 or len > 24:
-            len = int(input("Desired Length: "))
-            if len < 12 or len > 24:
-                print("Length must be between 8 and 24 characters long.")
-        special_chars = input("Included Special Characters/Symbols (Ex. #$%&@): ")
-        password = generate_password(len=len, special_chars=special_chars)
-    else:
-        password = generate_password()
-
-    ciphertext, nonce = encrypt(user, password.encode())
-    try:
-        cursor.execute(
-            """
-            INSERT INTO passwords (user_id, name, nonce, ciphertext)
-            VALUES (?, ?, ?, ?)
-            """,
-            (user["id"], password_name, nonce, ciphertext),
-        )
-        conn.commit()
-    except IntegrityError:
-        clear_terminal()
-        print("Password with that name already exists.")
-        time.sleep(2)
-
-
-def update(user):
-    passwords, unformatted_passwords = read(user, "PATCH")
-    if passwords and unformatted_passwords:
-        update_id = int(input("\nUpdate by ID: "))
-        pyperclip.copy(passwords[update_id])
-        updated_password = input(
-            "Press (CTRL + V) to Edit, then ENTER to save changes: "
-        )
-        ciphertext, nonce = encrypt(user, updated_password.encode())
-        for key, value in unformatted_passwords.items():
-            if update_id == value["id"]:
-                print(key, value["user_id"], ciphertext, nonce)
-                cursor.execute(
-                    """
-                    UPDATE passwords
-                    SET ciphertext = ?,
-                        nonce = ?
-                    WHERE user_id = ?
-                        AND name = ?
-                    """,
-                    (ciphertext, nonce, value["user_id"], key),
-                )
-                conn.commit()
-        pyperclip.copy("")
-
-
-def delete(user):
-    passwords, temp = read(user, "DEL")
-    if passwords and temp:
-        try:
-            delete_id = int(input("\nDelete by ID: "))
-        except ValueError:
+                field.value = value
+                counter += 1
+        return field_group
+    
+    def build_display_menus(self):
+        for key, values in self.MENU_CONFIG.items():
+            choices = []
+            for value in self.MENU_CONFIG[key]["choices"]:
+                dispatch_table = self.get_dispatch_table()
+                if value["action"] in dispatch_table:
+                    choice = Choice(title=value["title"], value=dispatch_table[value["action"]])
+                    choices.append(choice) 
+            menu = Menu(title=values["title"], choices=choices)
+            setattr(self, key, menu)
+    
+    def get_dispatch_table(self):
+        return {
+            "login": self.login,
+            "create_user": self.create_user,
+            "delete_user": self.delete_user,
+            "view_passwords": self.view_passwords,
+            "create_password": self.create_password,
+            "update_password": self.update_password,
+            "delete_password": self.delete_password
+        }
+    
+    def build_password_menu(self, passwords: dict) -> Menu:
+        choices = []
+        tabs = "            "
+        for password_id, value in passwords.items():
+            choice = Choice(title=f"{str(password_id) + tabs}{value["name"] + tabs}{value["password"]+ tabs}{str(value["created_at"]) + tabs}", value=password_id)
+            choices.append(choice)
+        return Menu(title="ezpass/user/passwords", choices=choices)
+    
+    def login(self):
+        while not self.client.is_authenticated():
+            login_field_group = LoginFieldGroup()
+            login_field_group = self.get_fields(login_field_group)
+            if login_field_group:
+                self.is_loggedin = self.client.login(login_field_group)
+            elif login_field_group is None:
+                return
+        
+    def create_user(self):
+        create_user_field_group = CreateUserFieldGroup()
+        while True:
+            create_user_field_group = self.get_fields(create_user_field_group)
+            if create_user_field_group:
+                self.client.create_user(create_user_field_group)
             return
-        for password_name, value in passwords.items():
-            if delete_id == value["id"]:
-                confirm_delete = input(
-                    f"Are you sure you want to delete '{password_name}'? [y/N]: "
-                )
-                if confirm_delete == "N":
-                    return
-                cursor.execute(
-                    """
-                    DELETE FROM passwords
-                    WHERE user_id = ?
-                    AND name = ?
-                    """,
-                    (value["user_id"], password_name),
-                )
-                conn.commit()
-
-
+  
+    def delete_user(self):
+        pass
+    
+    def view_passwords(self):
+        if self.client.is_authenticated():
+            passwords = self.client.get_passwords()
+            #Print pretty with rich
+            print(passwords)
+            return passwords
+    
+    def create_password(self):
+        password_name = questionary.text("ID Name:").ask()
+        use_recommended_params = questionary.confirm("Use recommended parameters?").ask()
+        if use_recommended_params:
+            self.client.create_password(password_name)
+        else:
+            length = questionary.text("Desired Password Length:").ask()
+            include = questionary.text("Included Special Characters:").ask()
+            self.client.create_password(password_name, length, include)
+        
+    def update_password(self):
+        if self.client.is_authenticated():
+            passwords = self.view_passwords()
+            password_menu = self.build_password_menu(passwords)
+            #can nest selects, but implement with prompt.toolkit
+            if passwords:
+                password_id = questionary.select(
+                    message=password_menu.title,
+                    choices=password_menu.choices
+                ).ask()
+                plaintext = questionary.text("Update", passwords[password_id]["password"]).ask()
+                self.client.update_password(password_id, plaintext)
+            
+    
+    def delete_password(self):
+        if self.client.is_authenticated():
+            passwords = self.view_passwords()
+            password_menu = self.build_password_menu(passwords)
+            #can nest selects, but implement with prompt.toolkit
+            if passwords:
+                password_id = questionary.select(
+                    message=password_menu.title,
+                    choices=password_menu.choices
+                ).ask()
+                self.client.delete_password(password_id)
+    
+    def display_root_menu(self):
+        method = self.add_custom_bindings(
+            questionary.select(
+                message=self.root_menu.title,
+                choices=self.root_menu.choices,
+                instruction=self.NAV_CONTROLS
+            )
+        ).ask()
+        if callable(method):
+            method()
+        else:
+            self.exit_flag = True
+        
+    def display_user_menu(self):
+        method = self.add_custom_bindings(
+            questionary.select(
+                message=self.user_menu.title,
+                choices=self.user_menu.choices,
+                instruction=self.NAV_CONTROLS
+            )
+        ).ask()
+        if callable(method):
+            method()
+        else:
+            self.client.logout()
+        
+    def run(self):
+        self.build_display_menus()
+        while self.exit_flag == False:
+            if self.client.is_authenticated():
+                self.display_user_menu()
+            else:
+                self.display_root_menu()
+    
+    def clear_terminal(self):
+        command = "cls" if os.name == "nt" else "clear"
+        subprocess.run(command, shell=True)
+    
+#Replace questionary with prompt tool kit for more control
 def main():
-    is_authenticated = False
-    while is_authenticated == False:
-        clear_terminal()
-        display_main_menu()
-        menu_selection = input("Choose an option: ")
-        if menu_selection == "1":
-            user, is_authenticated = login()
-            if is_authenticated:
-                user["key"] = derive_key(user["salt"], user["master"])
-        elif menu_selection == "2":
-            create_user()
-        elif menu_selection == "3":
-            user, is_authenticated = login()
-            if is_authenticated:
-                delete_user(user)
-                is_authenticated = False
-    while is_authenticated:
-        clear_terminal()
-        display_user_menu(user)
-        menu_selection = input("Choose an option: ")
-        if menu_selection == "1":
-            read(user, None)
-        elif menu_selection == "2":
-            create(user)
-        elif menu_selection == "3":
-            update(user)
-        elif menu_selection == "4":
-            delete(user)
-
+    db = Database()
+    db.initialize()
+    user_repo = UserRepository(db.conn)
+    password_repo = PasswordRepository(db.conn)
+    client = Client(user_repo, password_repo)
+    terminal_ui = TerminalUI(client)
+    terminal_ui.run()
 
 if __name__ == "__main__":
-    conn, cursor = setup.intialize()
     main()
-    conn.close()
