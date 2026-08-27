@@ -1,6 +1,6 @@
 import re
 
-from questionary import Validator, ValidationError
+from questionary import ValidationError, Validator
 
 
 class LoginUsernameValidator(Validator):

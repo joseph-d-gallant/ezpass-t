@@ -1,7 +1,8 @@
+import os
 import sqlite3
 from pathlib import Path
+
 from dotenv import load_dotenv
-import os
 
 load_dotenv()
 DB_FILENAME = os.getenv("DB_FILENAME")

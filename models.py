@@ -1,10 +1,11 @@
-from dataclasses import dataclass, field
-from typing import Callable
 import time
-from questionary import Choice
-import questionary
+from collections.abc import Callable
+from dataclasses import dataclass, field
 
-from validators import (
+import questionary
+from questionary import Choice
+
+from ui.validators import (
     ConfirmPasswordValidator,
     CreateEmailValidator,
     CreatePasswordValidator,
@@ -12,6 +13,8 @@ from validators import (
     LoginPasswordValidator,
     LoginUsernameValidator,
 )
+
+#For now share the same models file but implement interfaces later on to seperate what each system knows.
 
 #DB Related
 @dataclass

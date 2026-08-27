@@ -1,5 +1,7 @@
 import sqlite3
-from models import User, Password
+
+from models import Password, User
+
 
 class UserRepository:
     def __init__(self, conn: sqlite3.Connection):
