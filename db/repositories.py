@@ -35,6 +35,15 @@ class UserRepository:
         except sqlite3.IntegrityError:
             return "User exists already."
 
+    def delete_by_id(self, user: User):
+        self.conn.execute(
+            """DELETE FROM users
+            WHERE id = ?
+            """,
+            (user.id,)
+        )
+        self.conn.commit()
+
 class PasswordRepository:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn

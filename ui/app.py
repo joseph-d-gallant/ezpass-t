@@ -104,6 +104,7 @@ class TerminalUI:
             login_field_group = self.get_fields(login_field_group)
             if login_field_group:
                 self.is_loggedin = self.client.login(login_field_group)
+                return self.is_loggedin
             elif login_field_group is None:
                 return
         
@@ -116,7 +117,8 @@ class TerminalUI:
             return
   
     def delete_user(self):
-        pass
+        if self.login() and questionary.confirm("Are you sure you want to delete your account?:", default=False).ask():
+            self.client.delete_user()
     
     def view_passwords(self):
         if self.client.is_authenticated():
