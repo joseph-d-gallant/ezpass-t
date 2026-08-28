@@ -16,7 +16,6 @@ from ui.validators import (
     LoginUsernameValidator,
 )
 
-
 # --- Persistence and session models ---
 
 @dataclass
@@ -136,7 +135,6 @@ class EmailField:
 class FieldGroup:
     """Base type for ordered collections of input fields."""
 
-    pass
 
 
 @dataclass

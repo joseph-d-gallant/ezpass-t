@@ -7,38 +7,13 @@ import questionary
 from prompt_toolkit.key_binding.key_bindings import Binding
 from questionary import Choice, Separator
 
+from config import CONTROL_BINDINGS, MENUS
 from models import CreateUserFieldGroup, FieldGroup, LoginFieldGroup, Menu
 from services.client import Client
 
 
 class TerminalUI:
     """Interactive command-line front end built on questionary prompts."""
-
-    # Menu definitions map display labels to handler action names.
-    # Entries with action=None render as visual separators.
-    MENU_CONFIG = {
-        "root_menu": {
-            "title": "ezpass",
-            "choices": [
-                {"title": "Login", "action": "login"},
-                {"title": "Create User", "action": "create_user"},
-                {"title": "Delete User", "action": "delete_user"},
-                {"title": None, "action": None},
-                {"title": "Exit", "action": "exit_app"},
-            ]
-        },
-        "user_menu": {
-            "title": "ezpass/user",
-            "choices": [
-                {"title": "View", "action": "view_passwords"},
-                {"title": "Create", "action": "create_password"},
-                {"title": "Update", "action": "update_password"},
-                {"title": "Delete", "action": "delete_password"}
-            ]
-        }
-    }
-    
-    NAV_CONTROLS = "            [ ← Back  ↑ Up / ↓ Down  Select → ]"
     
     def __init__(self, client: Client):
         self.client = client
@@ -80,11 +55,11 @@ class TerminalUI:
         return field_group
     
     def build_display_menus(self):
-        """Convert MENU_CONFIG entries into Menu objects wired to handler callables."""
+        """Convert MENUS entries into Menu objects wired to handler callables."""
         dispatch_table = self.get_dispatch_table()
-        for key, values in self.MENU_CONFIG.items():
+        for key, values in MENUS.items():
             choices = []
-            for value in self.MENU_CONFIG[key]["choices"]:
+            for value in values["choices"]:
                 if value["action"] in dispatch_table:
                     choice = Choice(title=value["title"], value=dispatch_table[value["action"]])
                     choices.append(choice)
@@ -200,7 +175,7 @@ class TerminalUI:
             questionary.select(
                 message=self.root_menu.title,
                 choices=self.root_menu.choices,
-                instruction=self.NAV_CONTROLS
+                instruction=CONTROL_BINDINGS
             )
         ).ask()
         if callable(method):
@@ -215,7 +190,7 @@ class TerminalUI:
             questionary.select(
                 message=self.user_menu.title,
                 choices=self.user_menu.choices,
-                instruction=self.NAV_CONTROLS
+                instruction=CONTROL_BINDINGS
             )
         ).ask()
         if callable(method):
