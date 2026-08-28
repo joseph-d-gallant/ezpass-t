@@ -1,9 +1,13 @@
+"""Questionary validators for login and account-creation form fields."""
+
 import re
 
 from questionary import ValidationError, Validator
 
 
 class LoginUsernameValidator(Validator):
+    """Require a non-empty username at login."""
+
     def validate(self, document):
         text = document.text.strip()
         if not text:
@@ -14,6 +18,8 @@ class LoginUsernameValidator(Validator):
 
 
 class CreateUsernameValidator(Validator):
+    """Enforce username length and allowed character rules for new accounts."""
+
     MIN_LENGTH = 8
     MAX_LENGTH = 32
 
@@ -42,6 +48,8 @@ class CreateUsernameValidator(Validator):
 
 
 class LoginPasswordValidator(Validator):
+    """Require a non-empty password at login."""
+
     def validate(self, document):
         if not document.text:
             raise ValidationError(
@@ -51,6 +59,8 @@ class LoginPasswordValidator(Validator):
 
 
 class CreatePasswordValidator(Validator):
+    """Enforce minimum length and character-class rules for new passwords."""
+
     MIN_LENGTH = 8
 
     def validate(self, document):
@@ -78,6 +88,8 @@ class CreatePasswordValidator(Validator):
 
 
 class ConfirmPasswordValidator(Validator):
+    """Ensure the confirmation field matches the primary password field."""
+
     def __init__(self, password_field):
         self.password_field = password_field
 
@@ -95,6 +107,8 @@ class ConfirmPasswordValidator(Validator):
 
 
 class CreateEmailValidator(Validator):
+    """Require a non-empty email address in a basic user@domain format."""
+
     EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
     def validate(self, document):

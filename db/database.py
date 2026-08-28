@@ -1,3 +1,5 @@
+"""SQLite connection setup and schema initialization."""
+
 import os
 import sqlite3
 from pathlib import Path
@@ -8,11 +10,15 @@ load_dotenv()
 DB_FILENAME = os.getenv("DB_FILENAME")
 APP_NAME = "ezpass-t"
 
+
 class Database:
+    """Manages the local SQLite connection and application schema."""
+
     def __init__(self):
         self.conn = self.setup_conn()
 
     def setup_conn(self):
+        """Open (or create) the app database under the user's local data directory."""
         data_dir_path = Path.home() / "AppData" / "Local" / APP_NAME / "data"
         data_dir_path.mkdir(parents=True, exist_ok=True)
         db_path = data_dir_path / DB_FILENAME
@@ -22,6 +28,7 @@ class Database:
         return conn
 
     def initialize(self):
+        """Create core tables when they do not already exist."""
         self.conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

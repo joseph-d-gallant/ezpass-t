@@ -1,23 +1,30 @@
+"""Terminal UI for navigating menus, collecting input, and dispatching client actions."""
+
 import os
 import subprocess
 
 import questionary
 from prompt_toolkit.key_binding.key_bindings import Binding
-from questionary import Choice
+from questionary import Choice, Separator
 
 from models import CreateUserFieldGroup, FieldGroup, LoginFieldGroup, Menu
 from services.client import Client
 
 
 class TerminalUI:
-    #Could create hook to generate values as needed.
+    """Interactive command-line front end built on questionary prompts."""
+
+    # Menu definitions map display labels to handler action names.
+    # Entries with action=None render as visual separators.
     MENU_CONFIG = {
         "root_menu": {
             "title": "ezpass",
             "choices": [
                 {"title": "Login", "action": "login"},
                 {"title": "Create User", "action": "create_user"},
-                {"title": "Delete User", "action": "delete_user"}
+                {"title": "Delete User", "action": "delete_user"},
+                {"title": None, "action": None},
+                {"title": "Exit", "action": "exit_app"},
             ]
         },
         "user_menu": {
@@ -37,9 +44,11 @@ class TerminalUI:
         self.client = client
         self.root_menu: Menu
         self.user_menu: Menu
+        self.is_loggedin = False
         self.exit_flag = False
         
     def add_custom_bindings(self, question: questionary.Question):
+        """Bind the left arrow to cancel the current prompt and return None."""
         binding = Binding(
             keys=("left",),
             handler=lambda event: event.app.exit(result=None),
@@ -50,6 +59,7 @@ class TerminalUI:
         return question
     
     def get_fields(self, field_group: FieldGroup) -> FieldGroup | None:
+        """Prompt for each field in order; left arrow moves back or cancels on the first field."""
         counter = 0
         attrs = list(vars(field_group).items())
         while counter < len(vars(field_group)):
@@ -60,6 +70,7 @@ class TerminalUI:
                 return None
             elif value == None:
                 field.value = None
+                # Erase the previous prompt lines from the terminal before re-asking.
                 print("\033[1A\033[2K", end="")
                 print("\033[1A\033[2K", end="")
                 counter -= 1
@@ -69,21 +80,27 @@ class TerminalUI:
         return field_group
     
     def build_display_menus(self):
+        """Convert MENU_CONFIG entries into Menu objects wired to handler callables."""
+        dispatch_table = self.get_dispatch_table()
         for key, values in self.MENU_CONFIG.items():
             choices = []
             for value in self.MENU_CONFIG[key]["choices"]:
-                dispatch_table = self.get_dispatch_table()
                 if value["action"] in dispatch_table:
                     choice = Choice(title=value["title"], value=dispatch_table[value["action"]])
-                    choices.append(choice) 
+                    choices.append(choice)
+                else:
+                    seperator = Separator(line=" ")
+                    choices.append(seperator)
             menu = Menu(title=values["title"], choices=choices)
             setattr(self, key, menu)
     
     def get_dispatch_table(self):
+        """Map menu action names to bound UI handler methods."""
         return {
             "login": self.login,
             "create_user": self.create_user,
             "delete_user": self.delete_user,
+            "exit_app": self.exit_app,
             "view_passwords": self.view_passwords,
             "create_password": self.create_password,
             "update_password": self.update_password,
@@ -91,6 +108,7 @@ class TerminalUI:
         }
     
     def build_password_menu(self, passwords: dict) -> Menu:
+        """Build a selectable list of password rows for update and delete flows."""
         choices = []
         tabs = "            "
         for password_id, value in passwords.items():
@@ -99,7 +117,9 @@ class TerminalUI:
         return Menu(title="ezpass/user/passwords", choices=choices)
     
     def login(self):
+        """Collect credentials and attempt authentication until success or cancellation."""
         while not self.client.is_authenticated():
+            self.clear_terminal()
             login_field_group = LoginFieldGroup()
             login_field_group = self.get_fields(login_field_group)
             if login_field_group:
@@ -109,6 +129,7 @@ class TerminalUI:
                 return
         
     def create_user(self):
+        """Walk through account creation fields and submit them to the client."""
         create_user_field_group = CreateUserFieldGroup()
         while True:
             create_user_field_group = self.get_fields(create_user_field_group)
@@ -117,17 +138,20 @@ class TerminalUI:
             return
   
     def delete_user(self):
+        """Require login, then confirm and delete the authenticated account."""
         if self.login() and questionary.confirm("Are you sure you want to delete your account?:", default=False).ask():
             self.client.delete_user()
     
     def view_passwords(self):
+        """Fetch decrypted passwords from the client and print them for selection menus."""
         if self.client.is_authenticated():
             passwords = self.client.get_passwords()
-            #Print pretty with rich
             print(passwords)
             return passwords
     
     def create_password(self):
+        """Prompt for entry metadata and delegate password generation to the client."""
+        self.clear_terminal()
         password_name = questionary.text("ID Name:").ask()
         use_recommended_params = questionary.confirm("Use recommended parameters?").ask()
         if use_recommended_params:
@@ -138,10 +162,11 @@ class TerminalUI:
             self.client.create_password(password_name, length, include)
         
     def update_password(self):
+        """Let the user pick a stored password and submit a new plaintext value."""
+        self.clear_terminal()
         if self.client.is_authenticated():
             passwords = self.view_passwords()
             password_menu = self.build_password_menu(passwords)
-            #can nest selects, but implement with prompt.toolkit
             if passwords:
                 password_id = questionary.select(
                     message=password_menu.title,
@@ -152,10 +177,11 @@ class TerminalUI:
             
     
     def delete_password(self):
+        """Let the user pick a stored password and remove it from the vault."""
+        self.clear_terminal()
         if self.client.is_authenticated():
             passwords = self.view_passwords()
             password_menu = self.build_password_menu(passwords)
-            #can nest selects, but implement with prompt.toolkit
             if passwords:
                 password_id = questionary.select(
                     message=password_menu.title,
@@ -163,7 +189,13 @@ class TerminalUI:
                 ).ask()
                 self.client.delete_password(password_id)
     
+    def exit_app(self):
+        """Signal the main loop to terminate."""
+        self.exit_flag = True
+    
     def display_root_menu(self):
+        """Show the unauthenticated menu and invoke the selected action."""
+        self.clear_terminal()
         method = self.add_custom_bindings(
             questionary.select(
                 message=self.root_menu.title,
@@ -174,9 +206,11 @@ class TerminalUI:
         if callable(method):
             method()
         else:
-            self.exit_flag = True
+            self.exit_app()
         
     def display_user_menu(self):
+        """Show the authenticated vault menu and invoke the selected action."""
+        self.clear_terminal()
         method = self.add_custom_bindings(
             questionary.select(
                 message=self.user_menu.title,
@@ -187,9 +221,10 @@ class TerminalUI:
         if callable(method):
             method()
         else:
-            self.client.logout()
+            return self.display_root_menu()
         
     def run(self):
+        """Initialize menus and loop until the user exits the application."""
         self.build_display_menus()
         while self.exit_flag == False:
             if self.client.is_authenticated():
@@ -198,5 +233,7 @@ class TerminalUI:
                 self.display_root_menu()
     
     def clear_terminal(self):
+        """Clear the terminal screen using the platform-appropriate command."""
         command = "cls" if os.name == "nt" else "clear"
         subprocess.run(command, shell=True)
+    

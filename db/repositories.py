@@ -1,13 +1,18 @@
+"""Data-access layer for users and encrypted password records."""
+
 import sqlite3
 
 from models import Password, User
 
 
 class UserRepository:
+    """CRUD operations for user accounts."""
+
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
     
     def get_by_username(self, username: str) -> User | None:
+        """Fetch a single user row by username, or None if not found."""
         row = self.conn.execute(
             """
             SELECT *
@@ -22,6 +27,7 @@ class UserRepository:
             return user
     
     def create(self, user: User) -> str:
+        """Insert a new user and return a human-readable status message."""
         try:
             self.conn.execute(
                 """
@@ -36,6 +42,7 @@ class UserRepository:
             return "User exists already."
 
     def delete_by_id(self, user: User):
+        """Delete a user; related passwords cascade via foreign key rules."""
         self.conn.execute(
             """DELETE FROM users
             WHERE id = ?
@@ -44,11 +51,15 @@ class UserRepository:
         )
         self.conn.commit()
 
+
 class PasswordRepository:
+    """CRUD operations for encrypted password entries."""
+
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
     
     def get_by_username(self, username: str) -> dict:
+        """Return all password rows for the given username, newest first."""
         rows = self.conn.execute(
             """
             SELECT passwords.*
@@ -65,6 +76,7 @@ class PasswordRepository:
         return passwords
 
     def create(self, password: Password) -> Password | bool:
+        """Insert a password row and return the persisted record on success."""
         try:
             row = self.conn.execute(
                 """
@@ -81,6 +93,7 @@ class PasswordRepository:
             print(e)
 
     def update_by_id(self, password: Password):
+        """Replace ciphertext and nonce for an existing password owned by the user."""
         self.conn.execute(
             """
             UPDATE passwords
@@ -94,6 +107,7 @@ class PasswordRepository:
         self.conn.commit()
 
     def delete_by_id(self, password: Password):
+        """Delete a password row scoped to its owning user."""
         try:
             self.conn.execute(
                 """

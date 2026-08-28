@@ -1,3 +1,5 @@
+"""Application service layer for authentication, encryption, and password vault operations."""
+
 import os
 import secrets
 import smtplib
@@ -23,7 +25,10 @@ from models import (
 
 
 class Client:
-    SESSION_TIMEOUT = 10 * 60
+    """Coordinates user auth, vault encryption, and password CRUD for the active session."""
+
+    # Idle session length in seconds before re-authentication is required.
+    SESSION_TIMEOUT = 8 * 60
     
     def __init__(self, user_repo: UserRepository, password_repo: PasswordRepository):
         self.user_repo = user_repo
@@ -31,6 +36,7 @@ class Client:
         self.session = None
     
     def derive_secret_key(self, salt: bytes, master_password: str):
+        """Derive a 256-bit AES key from the master password and per-user salt."""
         kdf = Scrypt(
             salt=salt,
             length=32,  # 256-bit key
@@ -43,17 +49,21 @@ class Client:
         return secret_key
     
     def encrypt_plaintext(self, nonce: bytes, plaintext: str):
+        """Encrypt vault entry plaintext with the session secret key (AES-GCM)."""
         aes = AESGCM(self.session.secret_key)
         return aes.encrypt(nonce, plaintext, None)
     
     def decrypt_ciphertext(self, nonce: bytes, ciphertext: bytes) -> str:
+        """Decrypt a stored vault entry using its nonce and the session secret key."""
         aes = AESGCM(self.session.secret_key)
         return aes.decrypt(nonce, ciphertext, None)
     
     def generate_password(self, length, include):
+        """Build a random password that satisfies minimum character-class requirements."""
         lowercase = string.ascii_lowercase
         uppercase = string.ascii_uppercase
         digits = string.digits
+        # Guarantee at least one character from each required set before filling the rest.
         password = [
             secrets.choice(lowercase),
             secrets.choice(uppercase),
@@ -62,11 +72,11 @@ class Client:
         ]
         all_chars = lowercase + uppercase + digits + include
         password += [secrets.choice(all_chars) for _ in range(length - 4)]
-        # Securely shuffle the characters
         secrets.SystemRandom().shuffle(password)
         return "".join(password)
     
     def create_vault(self, user: User) -> Vault:
+        """Load and assemble the user's encrypted passwords into an in-memory vault."""
         passwords = self.password_repo.get_by_username(user.username)
         vault = Vault()
         for password in passwords:
@@ -74,6 +84,7 @@ class Client:
         return vault
 
     def get_passwords(self):
+        """Decrypt all vault entries and return display-ready metadata keyed by password id."""
         passwords = {}
         for password in self.session.vault.passwords.values():
             plaintext = self.decrypt_ciphertext(password.nonce, password.ciphertext).decode()
@@ -86,6 +97,7 @@ class Client:
         return passwords 
               
     def create_password(self, name: str, length: int = 10, include: str = "?!#@$"):
+        """Generate, encrypt, persist, and cache a new password entry in the vault."""
         nonce = os.urandom(12)
         plaintext = self.generate_password(length, include)
         ciphertext = self.encrypt_plaintext(nonce, plaintext.encode())
@@ -94,6 +106,7 @@ class Client:
             self.session.vault.add(password)
 
     def update_password(self, password_id: int, plaintext: str):
+        """Re-encrypt and persist an updated plaintext value for an existing entry."""
         nonce = os.urandom(12)
         ciphertext = self.encrypt_plaintext(nonce, plaintext.encode())
         password = self.session.vault.passwords[password_id]
@@ -102,10 +115,13 @@ class Client:
         self.password_repo.update_by_id(password)
     
     def delete_password(self, password_id: int):
+        """Remove a password from persistent storage and the in-memory vault."""
         if self.password_repo.delete_by_id(self.session.vault.passwords[password_id]):
             del self.session.vault.passwords[password_id]
         
     def verify_email(self, recipient_email: str):
+        """Send a one-time verification code and confirm the user's response."""
+        # Stubbed for development; remove the early return to enable SMTP verification.
         return True
         code = str(secrets.randbelow(900000) + 100000)
         msg = EmailMessage()
@@ -131,12 +147,10 @@ class Client:
         
         print("A verification code was sent to your email.")
         code_attempt = input("Code: ")
-        if code_attempt == code:
-            return True
-        else:
-            return False
+        return code_attempt == code
 
     def is_authenticated(self):
+        """Return True when a session exists and has not exceeded the idle timeout."""
         if self.session is None:
             return False
          
@@ -147,13 +161,15 @@ class Client:
         )
     
     def login(self, login_field_group: LoginFieldGroup) -> bool:
+        """Verify credentials, derive the vault key, and open an authenticated session."""
         user = self.user_repo.get_by_username(login_field_group.username_field.value)
         if user:
             try:
                 ph = PasswordHasher()
                 result = ph.verify(user.hash, login_field_group.password_field.value)
                 secret_key = self.derive_secret_key(user.salt, login_field_group.password_field.value)
-                del login_field_group #Not secure, consider a different language for clearing sensitive data.
+                # Best-effort cleanup; Python does not guarantee memory wiping of strings.
+                del login_field_group
                 vault = self.create_vault(user)
                 self.session = Session(user, secret_key, vault, time.monotonic(), True)
                 return result
@@ -164,9 +180,11 @@ class Client:
             return False
     
     def logout(self):
+        """Clear the active session and discard in-memory secrets."""
         self.session = None
     
     def create_user(self, create_field_group: CreateUserFieldGroup):
+        """Hash credentials and persist a new user record."""
         ph = PasswordHasher()
         salt = os.urandom(16)
         user = User(
@@ -180,4 +198,7 @@ class Client:
         print(result)
     
     def delete_user(self):
-        pass
+        """Delete the logged-in user from storage and end the session."""
+        self.user_repo.delete_by_id(self.session.user)
+        self.logout()
+        print("User has been deleted. Goodbye!")
