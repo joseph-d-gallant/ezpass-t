@@ -91,13 +91,15 @@ class Client:
             passwords[password.id] = {
                 "name": password.name, 
                 "password": plaintext,
-                "created_at": datetime.fromtimestamp(password.created_at)
+                "created_at": str(datetime.fromtimestamp(password.created_at))
             }
         
         return passwords 
               
-    def create_password(self, name: str, length: int = 10, include: str = "?!#@$"):
+    def create_password(self, name: str, length: int = 16, include: str = "?!#@$"):
         """Generate, encrypt, persist, and cache a new password entry in the vault."""
+        if not name:
+            return
         nonce = os.urandom(12)
         plaintext = self.generate_password(length, include)
         ciphertext = self.encrypt_plaintext(nonce, plaintext.encode())
@@ -174,9 +176,8 @@ class Client:
                 self.session = Session(user, secret_key, vault, time.monotonic(), True)
                 return result
             except VerifyMismatchError:
-                print("Invalid Password.")
+                return False
         else:
-            print("User Not Found.")
             return False
     
     def logout(self):
@@ -194,11 +195,9 @@ class Client:
             salt=salt,
             hash=ph.hash(create_field_group.password_field.value)
         )
-        result = self.user_repo.create(user)
-        print(result)
+        self.user_repo.create(user)
     
     def delete_user(self):
-        """Delete the logged-in user from storage and end the session."""
+        """Delete the logged-in user from the db and end the session."""
         self.user_repo.delete_by_id(self.session.user)
         self.logout()
-        print("User has been deleted. Goodbye!")

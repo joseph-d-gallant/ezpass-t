@@ -168,6 +168,8 @@ class CreateUserFieldGroup(FieldGroup):
             validator=ConfirmPasswordValidator(self.password_field),
         )
 
+@dataclass
+class CreatePasswordFieldGroup(FieldGroup):...
 
 @dataclass
 class LoginFieldGroup(FieldGroup):
