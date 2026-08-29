@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 import questionary
 from questionary import Choice
 
-from ui.validators import (
+from .ui.validators import (
     ConfirmPasswordValidator,
     CreateEmailValidator,
     CreatePasswordValidator,

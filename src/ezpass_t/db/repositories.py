@@ -2,7 +2,7 @@
 
 import sqlite3
 
-from models import Password, User
+from ..models import Password, User
 
 
 class UserRepository:

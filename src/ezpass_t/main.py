@@ -1,9 +1,9 @@
 """Application entry point: wire dependencies and start the terminal UI."""
 
-from db.database import Database
-from db.repositories import PasswordRepository, UserRepository
-from services.client import Client
-from ui.app import TerminalUI
+from .db.database import Database
+from .db.repositories import PasswordRepository, UserRepository
+from .services.client import Client
+from .ui.app import TerminalUI
 
 
 def main():

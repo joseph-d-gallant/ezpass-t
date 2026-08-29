@@ -13,8 +13,8 @@ from argon2.exceptions import VerifyMismatchError
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
-from db.repositories import PasswordRepository, UserRepository
-from models import (
+from ..db.repositories import PasswordRepository, UserRepository
+from ..models import (
     CreateUserFieldGroup,
     LoginFieldGroup,
     Password,

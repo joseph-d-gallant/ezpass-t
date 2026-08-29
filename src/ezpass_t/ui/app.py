@@ -8,9 +8,9 @@ import questionary
 from prompt_toolkit.key_binding.key_bindings import Binding
 from questionary import Choice, Separator, Style
 
-from config import CONTROL_BINDINGS, MENUS
-from models import CreateUserFieldGroup, FieldGroup, LoginFieldGroup, Menu
-from services.client import Client
+from ..config import CONTROL_BINDINGS, MENUS
+from ..models import CreateUserFieldGroup, FieldGroup, LoginFieldGroup, Menu
+from ..services.client import Client
 
 
 class TerminalUI:
