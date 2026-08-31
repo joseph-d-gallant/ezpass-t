@@ -24,7 +24,7 @@ from ..models import (
 )
 
 
-class Client:
+class PasswordManager:
     """Coordinates user auth, vault encryption, and password CRUD for the active session."""
 
     # Idle session length in seconds before re-authentication is required.
@@ -35,7 +35,7 @@ class Client:
         self.password_repo = password_repo
         self.session = None
     
-    def derive_secret_key(self, salt: bytes, master_password: str):
+    def derive_secret_key(self, salt: bytes, master_password: str) -> bytes:
         """Derive a 256-bit AES key from the master password and per-user salt."""
         kdf = Scrypt(
             salt=salt,
@@ -48,17 +48,17 @@ class Client:
         secret_key = kdf.derive(master_password.encode())
         return secret_key
     
-    def encrypt_plaintext(self, nonce: bytes, plaintext: str):
+    def encrypt_plaintext(self, nonce: bytes, plaintext: str) -> bytes:
         """Encrypt vault entry plaintext with the session secret key (AES-GCM)."""
         aes = AESGCM(self.session.secret_key)
-        return aes.encrypt(nonce, plaintext, None)
+        return aes.encrypt(nonce, plaintext.encode(), None)
     
     def decrypt_ciphertext(self, nonce: bytes, ciphertext: bytes) -> str:
         """Decrypt a stored vault entry using its nonce and the session secret key."""
         aes = AESGCM(self.session.secret_key)
-        return aes.decrypt(nonce, ciphertext, None)
+        return aes.decrypt(nonce, ciphertext, None).decode()
     
-    def generate_password(self, length, include):
+    def generate_password(self, length: int, include: str) -> str:
         """Build a random password that satisfies minimum character-class requirements."""
         lowercase = string.ascii_lowercase
         uppercase = string.ascii_uppercase
@@ -87,7 +87,7 @@ class Client:
         """Decrypt all vault entries and return display-ready metadata keyed by password id."""
         passwords = {}
         for password in self.session.vault.passwords.values():
-            plaintext = self.decrypt_ciphertext(password.nonce, password.ciphertext).decode()
+            plaintext = self.decrypt_ciphertext(password.nonce, password.ciphertext)
             passwords[password.id] = {
                 "name": password.name, 
                 "password": plaintext,
@@ -102,7 +102,7 @@ class Client:
             return
         nonce = os.urandom(12)
         plaintext = self.generate_password(length, include)
-        ciphertext = self.encrypt_plaintext(nonce, plaintext.encode())
+        ciphertext = self.encrypt_plaintext(nonce, plaintext)
         password = self.password_repo.create(Password(None, self.session.user.id, name, nonce, ciphertext))
         if password:
             self.session.vault.add(password)
@@ -110,7 +110,7 @@ class Client:
     def update_password(self, password_id: int, plaintext: str):
         """Re-encrypt and persist an updated plaintext value for an existing entry."""
         nonce = os.urandom(12)
-        ciphertext = self.encrypt_plaintext(nonce, plaintext.encode())
+        ciphertext = self.encrypt_plaintext(nonce, plaintext)
         password = self.session.vault.passwords[password_id]
         password.nonce = nonce
         password.ciphertext = ciphertext
