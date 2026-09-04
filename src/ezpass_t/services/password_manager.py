@@ -10,18 +10,11 @@ from email.message import EmailMessage
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
-from ..db.repositories import PasswordRepository, UserRepository
-from ..models import (
-    CreateUserFieldGroup,
-    LoginFieldGroup,
-    Password,
-    Session,
-    User,
-    Vault,
-)
+from ..infrastructure.crypto import Crypto
+from ..infrastructure.database.repositories import PasswordRepository, UserRepository
+from ..domain.models import User, Password, Session, Vault
+from ..ui.models import LoginFieldGroup, CreateUserFieldGroup
 
 
 class PasswordManager:
@@ -30,33 +23,11 @@ class PasswordManager:
     # Idle session length in seconds before re-authentication is required.
     SESSION_TIMEOUT = 8 * 60
     
-    def __init__(self, user_repo: UserRepository, password_repo: PasswordRepository):
+    def __init__(self, user_repo: UserRepository, password_repo: PasswordRepository, crypto: Crypto):
         self.user_repo = user_repo
         self.password_repo = password_repo
+        self.crypto = crypto
         self.session = None
-    
-    def derive_secret_key(self, salt: bytes, master_password: str) -> bytes:
-        """Derive a 256-bit AES key from the master password and per-user salt."""
-        kdf = Scrypt(
-            salt=salt,
-            length=32,  # 256-bit key
-            n=2**14,
-            r=8,
-            p=1,
-        )
-    
-        secret_key = kdf.derive(master_password.encode())
-        return secret_key
-    
-    def encrypt_plaintext(self, nonce: bytes, plaintext: str) -> bytes:
-        """Encrypt vault entry plaintext with the session secret key (AES-GCM)."""
-        aes = AESGCM(self.session.secret_key)
-        return aes.encrypt(nonce, plaintext.encode(), None)
-    
-    def decrypt_ciphertext(self, nonce: bytes, ciphertext: bytes) -> str:
-        """Decrypt a stored vault entry using its nonce and the session secret key."""
-        aes = AESGCM(self.session.secret_key)
-        return aes.decrypt(nonce, ciphertext, None).decode()
     
     def generate_password(self, length: int, include: str) -> str:
         """Build a random password that satisfies minimum character-class requirements."""
@@ -75,25 +46,28 @@ class PasswordManager:
         secrets.SystemRandom().shuffle(password)
         return "".join(password)
     
-    def create_vault(self, user: User) -> Vault:
+    def create_vault(self, user_id: int) -> Vault:
         """Load and assemble the user's encrypted passwords into an in-memory vault."""
-        passwords = self.password_repo.get_by_username(user.username)
+        passwords = self.password_repo.get_all_by_user_id(user_id)
         vault = Vault()
         for password in passwords:
-            vault.add(password)
+            vault.add_password(password)
         return vault
 
     def get_passwords(self):
         """Decrypt all vault entries and return display-ready metadata keyed by password id."""
+        #Password objects exist in the vault only, dict mappings create a temporary "Password" object for displaying plaintext
         passwords = {}
         for password in self.session.vault.passwords.values():
-            plaintext = self.decrypt_ciphertext(password.nonce, password.ciphertext)
+            plaintext = self.crypto.decrypt_ciphertext(self.session.secret_key, password.nonce, password.ciphertext)
+            #View representation
             passwords[password.id] = {
+                "id": password.id,
                 "name": password.name, 
-                "password": plaintext,
+                "plaintext": plaintext,
                 "created_at": str(datetime.fromtimestamp(password.created_at))
             }
-        
+            
         return passwords 
               
     def create_password(self, name: str, length: int = 16, include: str = "?!#@$"):
@@ -102,24 +76,28 @@ class PasswordManager:
             return
         nonce = os.urandom(12)
         plaintext = self.generate_password(length, include)
-        ciphertext = self.encrypt_plaintext(nonce, plaintext)
+        ciphertext = self.crypto.encrypt_plaintext(self.session.secret_key, nonce, plaintext)
         password = self.password_repo.create(Password(None, self.session.user.id, name, nonce, ciphertext))
         if password:
-            self.session.vault.add(password)
+            self.session.vault.add_password(password)
 
     def update_password(self, password_id: int, plaintext: str):
         """Re-encrypt and persist an updated plaintext value for an existing entry."""
+        #At minnimum you need user_id + password_id to update / delete, besides other values
         nonce = os.urandom(12)
-        ciphertext = self.encrypt_plaintext(nonce, plaintext)
-        password = self.session.vault.passwords[password_id]
+        ciphertext = self.crypto.encrypt_plaintext(self.session.secret_key, nonce, plaintext)
+        password = self.session.vault.get_password(password_id)
         password.nonce = nonce
         password.ciphertext = ciphertext
-        self.password_repo.update_by_id(password)
+        #Update vault only after local (db) update is successful
+        self.password_repo.update(password)
+        self.session.vault.update_password(password_id, nonce, ciphertext)
     
     def delete_password(self, password_id: int):
         """Remove a password from persistent storage and the in-memory vault."""
-        if self.password_repo.delete_by_id(self.session.vault.passwords[password_id]):
-            del self.session.vault.passwords[password_id]
+        password = self.session.vault.get_password(password_id)
+        self.password_repo.delete(password)
+        self.session.vault.delete_password(password_id)
         
     def verify_email(self, recipient_email: str):
         """Send a one-time verification code and confirm the user's response."""
@@ -169,10 +147,10 @@ class PasswordManager:
             try:
                 ph = PasswordHasher()
                 result = ph.verify(user.hash, login_field_group.password_field.value)
-                secret_key = self.derive_secret_key(user.salt, login_field_group.password_field.value)
+                secret_key = self.crypto.derive_secret_key(user.salt, login_field_group.password_field.value)
                 # Best-effort cleanup; Python does not guarantee memory wiping of strings.
                 del login_field_group
-                vault = self.create_vault(user)
+                vault = self.create_vault(user.id)
                 self.session = Session(user, secret_key, vault, time.monotonic(), True)
                 return result
             except VerifyMismatchError:
