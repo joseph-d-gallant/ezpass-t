@@ -1,4 +1,4 @@
-"""Terminal UI for navigating menus, collecting input, and dispatching client actions."""
+"""Terminal UI for navigating menus, collecting input, and dispatching.password_manager actions."""
 
 import os
 import subprocess
@@ -8,16 +8,16 @@ import questionary
 from prompt_toolkit.key_binding.key_bindings import Binding
 from questionary import Choice, Separator, Style
 
-from config import CONTROL_BINDINGS, MENUS
-from models import CreateUserFieldGroup, FieldGroup, LoginFieldGroup, Menu
-from services.client import Client
+from ..config import CONTROL_BINDINGS, MENUS
+from .models import CreateUserFieldGroup, FieldGroup, LoginFieldGroup, Menu
+from ..services.password_manager import PasswordManager
 
 
 class TerminalUI:
     """Interactive command-line front end built on questionary prompts."""
     
-    def __init__(self, client: Client):
-        self.client = client
+    def __init__(self, password_manager: PasswordManager):
+        self.password_manager = password_manager
         self.root_menu: Menu
         self.user_menu: Menu
         self.is_loggedin = False
@@ -94,19 +94,19 @@ class TerminalUI:
         choices = []
         tabs = "                    "
         for password_id, value in passwords.items():
-            choice = Choice(title=f"{str(password_id) + tabs}{value["name"] + tabs}{value["password"]+ tabs}{str(value["created_at"]) + tabs}", value=password_id)
+            choice = Choice(title=f"{str(password_id) + tabs}{value["name"] + tabs}{value["plaintext"]+ tabs}{str(value["created_at"]) + tabs}", value=value)
             choices.append(choice)
         return Menu(title="ezpass/user/passwords", choices=choices)
     
     def login(self):
         """Collect credentials and attempt authentication until success or cancellation."""
         self.clear_terminal()
-        while not self.client.is_authenticated():
+        while not self.password_manager.is_authenticated():
             self.clear_terminal()
             login_field_group = LoginFieldGroup()
             login_field_group = self.get_fields(login_field_group)
             if login_field_group:
-                self.is_loggedin = self.client.login(login_field_group)
+                self.is_loggedin = self.password_manager.login(login_field_group)
                 if self.is_loggedin:
                     return True
                 else:
@@ -117,35 +117,35 @@ class TerminalUI:
                 return
         
     def create_user(self):
-        """Walk through account creation fields and submit them to the client."""
+        """Walk through account creation fields and submit them to the.password_manager."""
         self.clear_terminal()
         create_user_field_group = CreateUserFieldGroup()
         while True:
             create_user_field_group = self.get_fields(create_user_field_group)
             if create_user_field_group:
-                self.client.create_user(create_user_field_group)
+                self.password_manager.create_user(create_user_field_group)
             return
   
     def delete_user(self):
         """Require login, then confirm and delete the authenticated account."""
-        self.client.logout()
+        self.password_manager.logout()
         if self.login() and questionary.confirm("Are you sure you want to delete your account?:", default=False).ask():
-            self.client.delete_user()
+            self.password_manager.delete_user()
             self.clear_terminal()
             questionary.print("Your account has been deleted.", style="green")
             time.sleep(4)
         else:
-            self.client.logout()
+            self.password_manager.logout()
 
     def view_passwords(self):
-        """Fetch decrypted passwords from the client and print them for selection menus."""
+        """Fetch decrypted passwords from the.password_manager and print them for selection menus."""
         self.clear_terminal()
-        if self.client.is_authenticated():
-            passwords = self.client.get_passwords()
+        if self.password_manager.is_authenticated():
+            passwords = self.password_manager.get_passwords()
             if passwords:
                 questionary.print("\n")
                 for id, password in passwords.items():
-                    questionary.print(f"{id}\t\t{password["name"]}\t\t\t\t{password["password"]}\t\t\t\t{password["created_at"]}")
+                    questionary.print(f"{id}\t\t{password["name"]}\t\t\t\t{password["plaintext"]}\t\t\t\t{password["created_at"]}")
                 questionary.print("\n")
                 questionary.press_any_key_to_continue("Press Any Key to Continue...").ask()
                 return passwords
@@ -155,50 +155,50 @@ class TerminalUI:
                 time.sleep(4)
     
     def create_password(self):
-        """Prompt for entry metadata and delegate password generation to the client."""
+        """Prompt for entry metadata and delegate password generation to the.password_manager."""
         self.clear_terminal()
         password_name = self.add_custom_bindings(questionary.text("ID Name:")).ask()
         if not password_name:
             return
         use_recommended_params = questionary.confirm("Use recommended parameters?").ask()
         if use_recommended_params:
-            self.client.create_password(password_name)
+            self.password_manager.create_password(password_name)
         else:
             length = questionary.text("Desired Password Length:").ask()
             include = questionary.text("Included Special Characters:").ask()
-            self.client.create_password(password_name, length, include)
+            self.password_manager.create_password(password_name, length, include)
         
     def update_password(self):
         """Let the user pick a stored password and submit a new plaintext value."""
         self.clear_terminal()
-        if self.client.is_authenticated():
-            passwords = self.client.get_passwords()
+        if self.password_manager.is_authenticated():
+            passwords = self.password_manager.get_passwords()
             password_menu = self.build_password_menu(passwords)
             if passwords:
-                password_id = self.add_custom_bindings(questionary.select(
+                password = self.add_custom_bindings(questionary.select(
                     message=password_menu.title,
                     choices=password_menu.choices,
                     default=None
                 )).ask()
-                if password_id in passwords:
-                    plaintext = questionary.text("Update", passwords[password_id]["password"]).ask()
-                    self.client.update_password(password_id, plaintext)
+                if password["id"] in passwords:
+                    plaintext = questionary.text("Update", passwords[password["id"]]["plaintext"]).ask()
+                    self.password_manager.update_password(password["id"], plaintext)
             
     
     def delete_password(self):
         """Let the user pick a stored password and remove it from the vault."""
         self.clear_terminal()
-        if self.client.is_authenticated():
-            passwords = self.client.get_passwords()
+        if self.password_manager.is_authenticated():
+            passwords = self.password_manager.get_passwords()
             password_menu = self.build_password_menu(passwords)
             if passwords:
-                password_id = self.add_custom_bindings(questionary.select(
+                password = self.add_custom_bindings(questionary.select(
                     message=password_menu.title,
                     choices=password_menu.choices,
                     default=None
                 )).ask()
-                if password_id:
-                    self.client.delete_password(password_id)
+                if password:
+                    self.password_manager.delete_password(password["id"])
     
     def exit_app(self):
         """Signal the main loop to terminate."""
@@ -244,7 +244,7 @@ class TerminalUI:
         """Initialize menus and loop until the user exits the application."""
         self.build_display_menus()
         while self.exit_flag == False:
-            if self.client.is_authenticated():
+            if self.password_manager.is_authenticated():
                 self.user_menu.title
                 self.display_user_menu()
             else:

@@ -1,0 +1,27 @@
+[project]
+name = "ezpass-t"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Joseph Gallant", email = "joe.d.gallant@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "argon2-cffi>=25.1.0",
+    "cryptography>=50.0.1",
+    "dotenv>=0.9.9",
+    "questionary>=2.1.1",
+]
+
+[project.scripts]
+ezpass-t = "ezpass_t.main:main"
+
+[build-system]
+requires = ["uv_build>=0.12.7,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
