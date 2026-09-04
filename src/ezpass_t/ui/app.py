@@ -9,7 +9,7 @@ from prompt_toolkit.key_binding.key_bindings import Binding
 from questionary import Choice, Separator, Style
 
 from ..config import CONTROL_BINDINGS, MENUS
-from ..models import CreateUserFieldGroup, FieldGroup, LoginFieldGroup, Menu
+from .models import CreateUserFieldGroup, FieldGroup, LoginFieldGroup, Menu
 from ..services.password_manager import PasswordManager
 
 
@@ -94,7 +94,7 @@ class TerminalUI:
         choices = []
         tabs = "                    "
         for password_id, value in passwords.items():
-            choice = Choice(title=f"{str(password_id) + tabs}{value["name"] + tabs}{value["password"]+ tabs}{str(value["created_at"]) + tabs}", value=password_id)
+            choice = Choice(title=f"{str(password_id) + tabs}{value["name"] + tabs}{value["plaintext"]+ tabs}{str(value["created_at"]) + tabs}", value=value)
             choices.append(choice)
         return Menu(title="ezpass/user/passwords", choices=choices)
     
@@ -145,7 +145,7 @@ class TerminalUI:
             if passwords:
                 questionary.print("\n")
                 for id, password in passwords.items():
-                    questionary.print(f"{id}\t\t{password["name"]}\t\t\t\t{password["password"]}\t\t\t\t{password["created_at"]}")
+                    questionary.print(f"{id}\t\t{password["name"]}\t\t\t\t{password["plaintext"]}\t\t\t\t{password["created_at"]}")
                 questionary.print("\n")
                 questionary.press_any_key_to_continue("Press Any Key to Continue...").ask()
                 return passwords
@@ -175,14 +175,14 @@ class TerminalUI:
             passwords = self.password_manager.get_passwords()
             password_menu = self.build_password_menu(passwords)
             if passwords:
-                password_id = self.add_custom_bindings(questionary.select(
+                password = self.add_custom_bindings(questionary.select(
                     message=password_menu.title,
                     choices=password_menu.choices,
                     default=None
                 )).ask()
-                if password_id in passwords:
-                    plaintext = questionary.text("Update", passwords[password_id]["password"]).ask()
-                    self.password_manager.update_password(password_id, plaintext)
+                if password["id"] in passwords:
+                    plaintext = questionary.text("Update", passwords[password["id"]]["plaintext"]).ask()
+                    self.password_manager.update_password(password["id"], plaintext)
             
     
     def delete_password(self):
@@ -192,13 +192,13 @@ class TerminalUI:
             passwords = self.password_manager.get_passwords()
             password_menu = self.build_password_menu(passwords)
             if passwords:
-                password_id = self.add_custom_bindings(questionary.select(
+                password = self.add_custom_bindings(questionary.select(
                     message=password_menu.title,
                     choices=password_menu.choices,
                     default=None
                 )).ask()
-                if password_id:
-                    self.password_manager.delete_password(password_id)
+                if password:
+                    self.password_manager.delete_password(password["id"])
     
     def exit_app(self):
         """Signal the main loop to terminate."""

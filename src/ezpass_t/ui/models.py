@@ -1,13 +1,10 @@
-"""Shared domain models for persistence, sessions, menus, and form input."""
-
-import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import questionary
 from questionary import Choice
 
-from .ui.validators import (
+from .validators import (
     ConfirmPasswordValidator,
     CreateEmailValidator,
     CreatePasswordValidator,
@@ -16,71 +13,6 @@ from .ui.validators import (
     LoginUsernameValidator,
 )
 
-# --- Persistence and session models ---
-
-@dataclass
-class User:
-    """Application user with Argon2 hash and per-user encryption salt."""
-
-    id: int | None
-    username: str
-    email: str
-    salt: bytes
-    hash: str
-    
-    @classmethod
-    def from_row(cls, row):
-        """Construct a User from a sqlite3.Row or mapping."""
-        return cls(**dict(row))
-
-
-@dataclass
-class Password:
-    """Encrypted vault entry stored for a user."""
-
-    id: int
-    user_id: int
-    name: str
-    nonce: bytes
-    ciphertext: bytes
-    created_at: int = field(default_factory=lambda: int(time.time()))
-    
-
-    @classmethod
-    def from_row(cls, row):
-        """Construct a Password from a sqlite3.Row."""
-        return cls(**dict(row))
-    
-    @classmethod
-    def from_rows(cls, rows):
-        """Construct a list of Password objects from query results."""
-        passwords = []
-        for row in rows:
-            passwords.append(cls.from_row(row))
-        return passwords
-
-
-@dataclass
-class Vault:
-    """In-memory index of decrypted password metadata keyed by password id."""
-
-    passwords: dict[int, Password] = field(default_factory=dict)
-    
-    def add(self, password: Password):
-        """Insert or replace a password entry in the vault cache."""
-        self.passwords[password.id] = password
-
-
-@dataclass
-class Session:
-    """Authenticated runtime state, including derived encryption key and vault."""
-
-    user: User
-    secret_key: bytes
-    vault: Vault
-    last_active: float
-    authenticated: bool
-
 
 @dataclass
 class Menu:
@@ -88,7 +20,6 @@ class Menu:
 
     title: str
     choices: list[Choice]
-
 
 # --- Form input models ---
 
