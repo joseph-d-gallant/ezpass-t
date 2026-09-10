@@ -240,6 +240,8 @@ class TerminalUI:
                     default=None,
                 )
             ).ask()
+            if password is None:
+                return
             plaintext = questionary.text(
                 "Update", passwords[password["id"]]["plaintext"]
             ).ask()
@@ -265,6 +267,8 @@ class TerminalUI:
                     default=None,
                 )
             ).ask()
+            if password is None:
+                return
             self.password_manager.delete_password(password["id"])
         except (PasswordDeletionError, PasswordNotCachedError):
             self.display_error("The password could not be deleted.")
