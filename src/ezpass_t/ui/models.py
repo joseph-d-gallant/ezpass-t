@@ -21,7 +21,9 @@ class Menu:
     title: str
     choices: list[Choice]
 
+
 # --- Form input models ---
+
 
 @dataclass
 class UsernameField:
@@ -31,7 +33,7 @@ class UsernameField:
     event: object = field(init=False)
     value: str = None
     validator: Callable = None
-    
+
     def __post_init__(self):
         self.event = questionary.text(self.placeholder, validate=self.validator)
 
@@ -57,7 +59,7 @@ class EmailField:
     event: object = field(init=False)
     value: str = None
     validator: Callable = None
-    
+
     def __post_init__(self):
         self.event = questionary.text(self.placeholder, validate=self.validator)
 
@@ -65,7 +67,6 @@ class EmailField:
 @dataclass
 class FieldGroup:
     """Base type for ordered collections of input fields."""
-
 
 
 @dataclass
@@ -99,8 +100,10 @@ class CreateUserFieldGroup(FieldGroup):
             validator=ConfirmPasswordValidator(self.password_field),
         )
 
+
 @dataclass
-class CreatePasswordFieldGroup(FieldGroup):...
+class CreatePasswordFieldGroup(FieldGroup): ...
+
 
 @dataclass
 class LoginFieldGroup(FieldGroup):

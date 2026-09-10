@@ -1,5 +1,6 @@
-from dataclasses import dataclass, field
 import time
+from dataclasses import dataclass, field
+
 
 @dataclass
 class UserRecord:

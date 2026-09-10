@@ -2,10 +2,17 @@
 
 import sqlite3
 
-from ...domain.models import User, Password
-from .models import UserRecord, PasswordRecord
+from ...domain.models import Password, User
+from ...services.exceptions import (
+    PasswordAlreadyExistsError,
+    PasswordDeletionError,
+    UserAlreadyExistsError,
+    UserNotFoundError,
+)
+from .models import PasswordRecord, UserRecord
 
-#Convert domain objects to records to save, translate rows to records and create new objects from those records
+
+# Convert domain objects to records to save, translate rows to records and create new objects from those records
 class UserRepository:
     """CRUD operations for user accounts."""
 
@@ -18,7 +25,7 @@ class UserRepository:
             username=row["username"],
             email=row["email"],
             salt=row["salt"],
-            hash=row["hash"]
+            hash=row["hash"],
         )
 
     def _record_to_user(self, user_record: UserRecord) -> User:
@@ -27,9 +34,9 @@ class UserRepository:
             username=user_record.username,
             email=user_record.email,
             salt=user_record.salt,
-            hash=user_record.hash
+            hash=user_record.hash,
         )
-    
+
     def get_by_username(self, username: str) -> User | None:
         """Fetch a single user row by username, or None if not found."""
         row = self.conn.execute(
@@ -42,13 +49,12 @@ class UserRepository:
         ).fetchone()
 
         if row is None:
-            return None
+            raise UserNotFoundError
 
         user_record = self._row_to_record(row)
         user = self._record_to_user(user_record)
         return user
 
-    
     def create(self, user: User) -> str:
         """Insert a new user and return a human-readable status message."""
         try:
@@ -61,8 +67,9 @@ class UserRepository:
             )
             self.conn.commit()
             return "User created."
-        except sqlite3.IntegrityError:
-            return "User exists already."
+        # as e -> from e shows full trace
+        except sqlite3.IntegrityError as e:
+            raise UserAlreadyExistsError() from e
 
     def delete_by_id(self, user: User):
         """Delete a user; related passwords cascade via foreign key rules."""
@@ -70,7 +77,7 @@ class UserRepository:
             """DELETE FROM users
             WHERE id = ?
             """,
-            (user.id,)
+            (user.id,),
         )
         self.conn.commit()
 
@@ -82,38 +89,38 @@ class PasswordRepository:
         self.conn = conn
 
     def _row_to_record(self, row) -> PasswordRecord:
-        #Future proof db changes without needing to change Password (Password is owned by the domain)
+        # Future proof db changes without needing to change Password (Password is owned by the domain)
         return PasswordRecord(
             id=row["id"],
             user_id=row["user_id"],
             name=row["name"],
             nonce=row["nonce"],
             ciphertext=row["ciphertext"],
-            created_at=row["created_at"]
+            created_at=row["created_at"],
         )
 
     def _record_to_password(self, password_record: PasswordRecord) -> Password:
-        #Truncate record to create a password with less attrs.
+        # Truncate record to create a password with less attrs.
         return Password(
             id=password_record.id,
             user_id=password_record.user_id,
             name=password_record.name,
             nonce=password_record.nonce,
             ciphertext=password_record.ciphertext,
-            created_at=password_record.created_at
+            created_at=password_record.created_at,
         )
 
     def _password_to_record(self, password: Password) -> PasswordRecord:
-        #Add default values that diff from Password structure and matter to db.
+        # Add default values that diff from Password structure and matter to db.
         return PasswordRecord(
             id=password.id,
             user_id=password.user_id,
             name=password.name,
             nonce=password.nonce,
             ciphertext=password.ciphertext,
-            created_at=password.created_at
+            created_at=password.created_at,
         )
-    
+
     def get_all_by_user_id(self, user_id: int) -> list[Password]:
         """Return all password rows for the given username, newest first."""
         rows = self.conn.execute(
@@ -144,7 +151,13 @@ class PasswordRepository:
                 VALUES (?, ?, ?, ?, ?)
                 RETURNING *
                 """,
-                (password_record.user_id, password_record.name, password_record.nonce, password_record.ciphertext, password_record.created_at),
+                (
+                    password_record.user_id,
+                    password_record.name,
+                    password_record.nonce,
+                    password_record.ciphertext,
+                    password_record.created_at,
+                ),
             ).fetchone()
             self.conn.commit()
             if row is None:
@@ -153,10 +166,9 @@ class PasswordRepository:
             new_password_record = self._row_to_record(row)
             password = self._record_to_password(new_password_record)
             return password
-            
+
         except sqlite3.IntegrityError as e:
-            print(e)
-            return None
+            raise PasswordAlreadyExistsError() from e
 
     def update(self, password: Password) -> None:
         """Replace ciphertext and nonce for an existing password owned by the user."""
@@ -175,7 +187,6 @@ class PasswordRepository:
         except sqlite3.IntegrityError as e:
             print(e)
 
-
     def delete(self, password: Password) -> None:
         """Delete a password row scoped to its owning user."""
         try:
@@ -188,6 +199,7 @@ class PasswordRepository:
                 (password.id, password.user_id),
             )
             self.conn.commit()
-            print("Password Deleted.")
         except sqlite3.IntegrityError as e:
-            print(e)
+            raise PasswordDeletionError(
+                f"Failed to delete password {password.id}"
+            ) from e
