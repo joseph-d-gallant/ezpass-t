@@ -12,7 +12,6 @@ dependencies = [
     "cryptography>=50.0.1",
     "dotenv>=0.9.9",
     "questionary>=2.1.1",
-    "ruff>=0.16.6",
 ]
 
 [project.scripts]
@@ -24,5 +23,8 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "mkdocs>=1.6.1",
+    "mkdocs-redirects>=1.2.3",
     "pytest>=9.1.1",
+    "ruff>=0.16.6",
 ]
