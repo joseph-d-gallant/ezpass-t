@@ -38,7 +38,7 @@ class PasswordManager:
         self.crypto = crypto
         self.session = None
 
-    def generate_password(self, length: int, include: str) -> str:
+    def _generate_password(self, length: int, include: str) -> str:
         """Build a random password that satisfies minimum character-class requirements."""
         lowercase = string.ascii_lowercase
         uppercase = string.ascii_uppercase
@@ -55,7 +55,7 @@ class PasswordManager:
         secrets.SystemRandom().shuffle(password)
         return "".join(password)
 
-    def create_vault(self, user_id: int) -> Vault:
+    def _create_vault(self, user_id: int) -> Vault:
         """Load and assemble the user's encrypted passwords into an in-memory vault."""
         passwords = self.password_repo.get_all_by_user_id(user_id)
         vault = Vault()
@@ -106,7 +106,7 @@ class PasswordManager:
             if not password_name:
                 return
             nonce = os.urandom(12)
-            plaintext = self.generate_password(password_length, special_chars)
+            plaintext = self._generate_password(password_length, special_chars)
             ciphertext = self.crypto.encrypt_plaintext(
                 self.session.secret_key, nonce, plaintext
             )
@@ -157,7 +157,7 @@ class PasswordManager:
                 )
                 # Best-effort cleanup; Python does not guarantee memory wiping of strings.
                 del login_field_group
-                vault = self.create_vault(user.id)
+                vault = self._create_vault(user.id)
                 self.session = Session(user, secret_key, vault, time.monotonic(), True)
                 return result
             except VerifyMismatchError as e:
