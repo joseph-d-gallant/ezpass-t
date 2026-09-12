@@ -25,6 +25,7 @@ build-backend = "uv_build"
 dev = [
     "mkdocs>=1.6.1",
     "mkdocs-redirects>=1.2.3",
+    "pre-commit>=4.6.2",
     "pytest>=9.1.1",
-    "ruff>=0.16.6",
+    "ruff==0.16.7",
 ]
