@@ -4,7 +4,7 @@ import os
 import secrets
 import string
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
@@ -87,7 +87,7 @@ class PasswordManager:
                     "id": password.id,
                     "name": password.name,
                     "plaintext": plaintext,
-                    "created_at": str(datetime.fromtimestamp(password.created_at, tz=timezone.utc)),
+                    "created_at": str(datetime.fromtimestamp(password.created_at, tz=UTC)),
                 }
             return passwords
         else:
