@@ -2,11 +2,14 @@
 
 import sys
 
-from .infrastructure.crypto import Crypto
-from .infrastructure.database.database import Database
-from .infrastructure.database.repositories import PasswordRepository, UserRepository
-from .services.password_manager import PasswordManager
-from .ui.app import TerminalUI
+from ezpass_t.infrastructure.crypto import Crypto
+from ezpass_t.infrastructure.database.database import Database
+from ezpass_t.infrastructure.database.repositories import (
+    PasswordRepository,
+    UserRepository,
+)
+from ezpass_t.services.password_manager import PasswordManager
+from ezpass_t.ui.app import TerminalUI
 
 
 def main():
