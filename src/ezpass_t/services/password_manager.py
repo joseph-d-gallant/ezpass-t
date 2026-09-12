@@ -2,11 +2,9 @@
 
 import os
 import secrets
-import smtplib
 import string
 import time
-from datetime import datetime
-from email.message import EmailMessage
+from datetime import datetime, timezone
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
@@ -89,7 +87,7 @@ class PasswordManager:
                     "id": password.id,
                     "name": password.name,
                     "plaintext": plaintext,
-                    "created_at": str(datetime.fromtimestamp(password.created_at)),
+                    "created_at": str(datetime.fromtimestamp(password.created_at, tz=timezone.utc)),
                 }
             return passwords
         else:
