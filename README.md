@@ -1,5 +1,6 @@
 # ezpass-t
 [![Python](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/)
+[![CI](https://github.com/joseph-d-gallant/ezpass-t/actions/workflows/continuous-integration.yml/badge.svg)](https://github.com/joseph-d-gallant/ezpass-t/actions/workflows/continuous-integration.yml)
 
 *A local CLI password manager.*
 
