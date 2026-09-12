@@ -87,7 +87,9 @@ class PasswordManager:
                     "id": password.id,
                     "name": password.name,
                     "plaintext": plaintext,
-                    "created_at": str(datetime.fromtimestamp(password.created_at, tz=UTC)),
+                    "created_at": str(
+                        datetime.fromtimestamp(password.created_at, tz=UTC)
+                    ),
                 }
             return passwords
         else:
