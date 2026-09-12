@@ -138,33 +138,6 @@ class PasswordManager:
             self.password_repo.delete(password)
             self.session.vault.delete_password(password_id)
 
-    def verify_email(self, recipient_email: str):
-        """Send a one-time verification code and confirm the user's response."""
-        # Stubbed for development; remove the early return to enable SMTP verification.
-        return True
-        code = str(secrets.randbelow(900000) + 100000)
-        msg = EmailMessage()
-
-        msg["Subject"] = "Verification Code - (ezpass-t)"
-        msg["From"] = "noreply@ezpass-t.dev"
-        msg["To"] = recipient_email
-
-        msg.set_content(f"""
-        Your verification code is:
-    
-        {code}
-        """)
-        with smtplib.SMTP("smtp-relay.brevo.com", 587) as smtp:
-            smtp.ehlo()
-            smtp.starttls()
-            smtp.ehlo()
-            smtp.login(BREVO_EMAIL, BREVO_PASSWORD)
-            smtp.send_message(msg)
-
-        print("A verification code was sent to your email.")
-        code_attempt = input("Code: ")
-        return code_attempt == code
-
     def is_authenticated(self):
         """Return True when a session exists and has not exceeded the idle timeout."""
         if self.session is None:
