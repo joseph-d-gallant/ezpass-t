@@ -17,7 +17,7 @@ class Database:
     def __init__(self):
         self.conn = self.setup_conn()
 
-    def setup_conn(self):
+    def setup_conn(self) -> sqlite3.Connection:
         """Open (or create) the app database under the user's local data directory."""
         data_dir_path = Path.home() / "AppData" / "Local" / APP_NAME / "data"
         data_dir_path.mkdir(parents=True, exist_ok=True)
@@ -27,7 +27,7 @@ class Database:
         conn.row_factory = sqlite3.Row
         return conn
 
-    def initialize(self):
+    def initialize(self) -> None:
         """Create core tables when they do not already exist."""
         self.conn.execute("""
             CREATE TABLE IF NOT EXISTS users (

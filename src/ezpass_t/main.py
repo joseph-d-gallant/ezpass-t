@@ -13,8 +13,8 @@ from ezpass_t.ui.app import TerminalUI
 
 
 def main():
-    debug = "--debug" in sys.argv
     """Initialize storage, construct services, and run the interactive CLI."""
+    debug = "--debug" in sys.argv
     db = Database()
     db.initialize()
     user_repo = UserRepository(db.conn)

@@ -124,7 +124,7 @@ class TerminalUI:
 
     #   ----    User/Account Management     ----
 
-    def login(self):
+    def login(self) -> None:
         """Collect credentials and attempt authentication until success or cancellation."""
         # Uses is_authenticated to prevent users from needing to relog if session is still active
         while not self.password_manager.is_authenticated():
@@ -140,7 +140,7 @@ class TerminalUI:
                     "ERROR during sign-in; username or password is incorrect."
                 )
 
-    def logout(self):
+    def logout(self) -> None:
         self.is_active = False
         self.password_manager.logout()
 
@@ -159,7 +159,7 @@ class TerminalUI:
             except UserAlreadyExistsError:
                 self.display_error("A similar account already exists.")
 
-    def delete_user(self):
+    def delete_user(self) -> None:
         """Require login, then confirm and delete the authenticated account."""
         self.clear_terminal()
         self.logout()
@@ -181,7 +181,7 @@ class TerminalUI:
 
     #   ----    CRUD Operations for Passwords   ----
 
-    def create_password(self):
+    def create_password(self) -> None:
         """Prompt for entry metadata and delegate password generation to the.password_manager."""
         self.clear_terminal()
         # Add fieldgroups and validation for password generation parameters
@@ -209,7 +209,7 @@ class TerminalUI:
             except PasswordAlreadyExistsError:
                 self.display_error("You already have a saved password with that name.")
 
-    def read_passwords(self):
+    def read_passwords(self) -> None:
         """Fetch decrypted passwords from the password_manager and print them for selection menus."""
         self.clear_terminal()
         try:
@@ -227,7 +227,7 @@ class TerminalUI:
             self.display_error("Your session is no longer valid; please sign-in again.")
             return self.logout()
 
-    def update_password(self):
+    def update_password(self) -> None:
         """Let the user pick a stored password and submit a new plaintext value."""
         self.clear_terminal()
         try:
@@ -254,7 +254,7 @@ class TerminalUI:
             self.display_error("Your session is no longer valid; please sign-in again.")
             return self.logout()
 
-    def delete_password(self):
+    def delete_password(self) -> None:
         """Let the user pick a stored password and remove it from the vault."""
         self.clear_terminal()
         try:
@@ -282,23 +282,23 @@ class TerminalUI:
 
     #   ----    UI Outputs  ----
 
-    def exit_app(self):
+    def exit_app(self) -> None:
         """Signal the main loop to terminate."""
         self.exit_flag = True
 
-    def display_notification(self, notificiation_message):
+    def display_notification(self, notificiation_message) -> None:
         self.clear_terminal()
         questionary.print(notificiation_message, style="green")
         time.sleep(4)
         self.clear_terminal()
 
-    def display_error(self, error_message):
+    def display_error(self, error_message) -> None:
         self.clear_terminal()
         questionary.print(error_message, style="red")
         time.sleep(4)
         self.clear_terminal()
 
-    def display_root_menu(self):
+    def display_root_menu(self) -> None:
         """Show the unauthenticated menu and invoke the selected action."""
         self.clear_terminal()
         method = self._add_custom_bindings(
@@ -314,7 +314,7 @@ class TerminalUI:
         else:
             self.exit_app()
 
-    def display_user_menu(self):
+    def display_user_menu(self) -> None:
         """Show the authenticated vault menu and invoke the selected action."""
         self.clear_terminal()
         method = self._add_custom_bindings(
@@ -326,12 +326,12 @@ class TerminalUI:
             )
         ).ask()
         if callable(method):
-            # Could move all exeception here if needed
+            # Could move all execeptions here if needed
             method()
         else:
             return self.display_root_menu()
 
-    def run(self):
+    def run(self) -> None:
         """Initialize menus and loop until the user exits the application."""
         self._build_display_menus()
         while self.exit_flag == False:
@@ -340,7 +340,7 @@ class TerminalUI:
             else:
                 self.display_root_menu()
 
-    def clear_terminal(self):
+    def clear_terminal(self) -> None:
         """Clear the terminal screen using the platform-appropriate command."""
         command = "cls" if os.name == "nt" else "clear"
         subprocess.run(command, shell=True, check=False)

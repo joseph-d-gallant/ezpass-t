@@ -29,9 +29,6 @@ class Password:
     created_at: int = field(default_factory=lambda: int(time.time()))
 
 
-# Keep plaintext out of object and only use when needed, then delete afterwards
-
-
 @dataclass
 class Vault:
     """In-memory index of decrypted password metadata keyed by password id."""
