@@ -111,7 +111,7 @@ class PasswordRepository:
         )
 
     def _password_to_record(self, password: Password) -> PasswordRecord:
-        # Add default values that diff from Password structure and matter to db.
+        # Add default values that diff from Password structure but matter to db.
         return PasswordRecord(
             id=password.id,
             user_id=password.user_id,

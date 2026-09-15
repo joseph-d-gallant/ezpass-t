@@ -1,11 +1,11 @@
+**Current Release: [v1.0.0](releases/v1.0/v1.0.0.md)   |   Python 3.13+  |  SQLite  |  CLI**
 # ezpass-t
 
-*A terminal-based CLI password manager.*
+*A local CLI password manager.*
 
-**Current Release: [v1.0.0](releases/v1.0/v1.0.0.md)   |   Python 3.13+  |  SQLite  |  CLI**
-> **NOTE:** This project has not been reviewed for security nor should it be used without fully understanding the potential associated risks. <br>As a user/dev, you assume and accept the risk when using this application for personal or other-related uses.
+> **NOTE:** This project has not been reviewed for security nor should it be used without fully understanding the potential associated risks. As a user/dev, you assume and accept the risk when using this application.
 
-## **Overview**
+## Overview
 
 ezpass-t provides a simple terminal workflow for managing credentials without requiring a cloud service.
 
@@ -13,7 +13,7 @@ A user creates an account with a master password, authenticates into a session, 
 
 The project is intentionally structured as a layered application rather than a single CLI script. User interaction, application logic, cryptography, and persistence have separate responsibilities, making the system easier to test and extend.
 
-## **Features**
+## Core Features
 
 | Feature | Description |
 | --- | --- |
@@ -24,13 +24,10 @@ The project is intentionally structured as a layered application rather than a s
 | Key Derivation | Derive the vault encryption key with Scrypt |
 | Authenticated Encryption | Protect vault secrets using AES-256-GCM |
 | Session Management | Restrict vault operations to authenticated sessions |
-| Idle Timeout | Expire inactive sessions automatically |
-| Input Validation | Validate registration and credential fields |
 | Local Persistence | Store application data in SQLite |
 | Repository Authorization | Scope vault operations to the authenticated user |
-| Automated Testing | Test cryptography, services, UI behavior, and persistence |
 
-## **Quickstart**
+## Quickstart
 
 #### Requirements
 
@@ -81,21 +78,19 @@ If terminal output disappears when the application exits, use debug mode:
 uv run ezpass-t --debug
 ```
 
-## **Security Scope**
+## Security Scope
 
-ezpass-t is designed to protect stored vault secrets against unauthorized access to the database itself, but it is not a complete defense against a compromised host.
-
+ezpass-t is designed to protect stored vault secrets against unauthorized access to the database itself, but it is not a complete defense against a compromised host like in the case of:
 - Malware running on the local machine
 - Keyloggers capturing the master password
 - A compromised Python/runtime environment
 - A malicious process with access to an active application session
 - Weak or compromised master passwords
 
-Encryption at rest protects the stored vault, not the entire operating environment.
 
-## **Roadmap**
+## Product Backlog
 - UI refactor for more control (removing questionary), small bug fixes
-- Logging and benchmarks for performance
+- Minimal backend with user auth
 - Optional cloud synchronization and backups
-
-**ezpass-t • v1.0.0**
+- MFA and email verification during signup
+- Logging and benchmarks for performance

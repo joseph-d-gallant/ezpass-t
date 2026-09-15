@@ -4,7 +4,7 @@
 
 *A local CLI password manager.*
 
-> **NOTE:** This project has not been reviewed for security nor should it be used without fully understanding the potential associated risks. <br>As a user/dev, you assume and accept the risk when using this application for personal or other-related uses.
+> **NOTE:** This project has not been reviewed for security nor should it be used without fully understanding the potential associated risks. As a user/dev, you assume and accept the risk when using this application for personal or other-related uses.
 
 ## **Overview**
 
@@ -14,7 +14,7 @@ A user creates an account with a master password, authenticates into a session, 
 
 The project is intentionally structured as a layered application rather than a single CLI script. User interaction, application logic, cryptography, and persistence have separate responsibilities, making the system easier to test and extend.
 
-## **Features**
+## Core Features
 
 | Feature | Description |
 | --- | --- |
@@ -25,11 +25,9 @@ The project is intentionally structured as a layered application rather than a s
 | Key Derivation | Derive the vault encryption key with Scrypt |
 | Authenticated Encryption | Protect vault secrets using AES-256-GCM |
 | Session Management | Restrict vault operations to authenticated sessions |
-| Idle Timeout | Expire inactive sessions automatically |
-| Input Validation | Validate registration and credential fields |
 | Local Persistence | Store application data in SQLite |
 | Repository Authorization | Scope vault operations to the authenticated user |
-| Automated Testing | Test cryptography, services, UI behavior, and persistence |
+
 
 ## **Quickstart**
 
