@@ -80,7 +80,8 @@ uv run ezpass-t --debug
 
 ## Security Scope
 
-ezpass-t is designed to protect stored vault secrets against unauthorized access to the database itself, but it is not a complete defense against a compromised host like in the case of:
+ezpass-t is designed to protect stored vault secrets against unauthorized access to the database itself, but it is not a complete defense against a compromised host like
+
 - Malware running on the local machine
 - Keyloggers capturing the master password
 - A compromised Python/runtime environment
