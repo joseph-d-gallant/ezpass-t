@@ -1,6 +1,7 @@
 # ezpass-t
 [![Python](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/)
 [![CI](https://github.com/joseph-d-gallant/ezpass-t/actions/workflows/continuous-integration.yml/badge.svg)](https://github.com/joseph-d-gallant/ezpass-t/actions/workflows/continuous-integration.yml)
+[![Version](https://img.shields.io/github/v/release/joseph-d-gallant/ezpass-t?label=version)](https://github.com/joseph-d-gallant/ezpass=t/releases/latest)
 
 *A local CLI password manager.*
 
@@ -81,4 +82,4 @@ uv run ezpass-t --debug
 ```
 
 ## Documentation
-The full documentation can be found [here].
+The full documentation can be found [here](https://joseph-d-gallant.github.io/ezpass-t/).
