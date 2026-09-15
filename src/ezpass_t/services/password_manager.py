@@ -1,0 +1,186 @@
+"""Application service layer for authentication, encryption, and password vault operations."""
+
+import os
+import secrets
+import string
+import time
+from datetime import UTC, datetime
+
+from argon2 import PasswordHasher
+from argon2.exceptions import VerifyMismatchError
+
+from ..domain.models import Password, Session, User, Vault
+from ..infrastructure.crypto import Crypto
+from ..infrastructure.database.repositories import PasswordRepository, UserRepository
+from ..ui.models import CreateUserFieldGroup, LoginFieldGroup
+from .exceptions import (
+    AuthenticationError,
+    EmptyVaultError,
+    PasswordNotCachedError,
+    SessionIsExpiredError,
+)
+
+
+class PasswordManager:
+    """Coordinates user auth, vault encryption, and password CRUD for the active session."""
+
+    # Idle session length in seconds before re-authentication is required.
+    SESSION_TIMEOUT = 8 * 60
+
+    def __init__(
+        self,
+        user_repo: UserRepository,
+        password_repo: PasswordRepository,
+        crypto: Crypto,
+    ):
+        self.user_repo = user_repo
+        self.password_repo = password_repo
+        self.crypto = crypto
+        self.session = None
+
+    def _generate_password(self, length: int, include: str) -> str:
+        """Build a random password that satisfies minimum character-class requirements."""
+        lowercase = string.ascii_lowercase
+        uppercase = string.ascii_uppercase
+        digits = string.digits
+        # Guarantee at least one character from each required set before filling the rest.
+        password = [
+            secrets.choice(lowercase),
+            secrets.choice(uppercase),
+            secrets.choice(digits),
+            secrets.choice(include),
+        ]
+        all_chars = lowercase + uppercase + digits + include
+        password += [secrets.choice(all_chars) for _ in range(length - 4)]
+        secrets.SystemRandom().shuffle(password)
+        return "".join(password)
+
+    def _create_vault(self, user_id: int) -> Vault:
+        """Load and assemble the user's encrypted passwords into an in-memory vault."""
+        passwords = self.password_repo.get_all_by_user_id(user_id)
+        vault = Vault()
+        for password in passwords:
+            vault.add_password(password)
+        return vault
+
+    # Return type checking based on succesful return, not failure
+    def get_one_password(self, password_id: int) -> Password:
+        try:
+            password = self.session.vault.get_password(password_id)
+            return password
+        except KeyError as e:
+            raise PasswordNotCachedError("Password not found in vault.") from e
+
+    def get_passwords(self) -> dict[int, dict]:
+        """Decrypt all vault entries and return display-ready metadata keyed by password id."""
+        # Password objects exist in the vault only, dict mappings create a temporary "Password" object for displaying plaintext
+        if self.session.is_authenticated():
+            if not self.session.vault.passwords:
+                raise EmptyVaultError
+            passwords = {}
+            for password in self.session.vault.passwords.values():
+                plaintext = self.crypto.decrypt_ciphertext(
+                    self.session.secret_key, password.nonce, password.ciphertext
+                )
+                # View representation
+                passwords[password.id] = {
+                    "id": password.id,
+                    "name": password.name,
+                    "plaintext": plaintext,
+                    "created_at": str(
+                        datetime.fromtimestamp(password.created_at, tz=UTC)
+                    ),
+                }
+            return passwords
+        else:
+            raise SessionIsExpiredError
+
+    def create_password(
+        self,
+        password_name: str,
+        password_length: int = 16,
+        special_chars: str = "?!#@$",
+    ):
+        """Generate, encrypt, persist, and cache a new password entry in the vault."""
+        if self.session.is_authenticated():
+            if not password_name:
+                return
+            nonce = os.urandom(12)
+            plaintext = self._generate_password(password_length, special_chars)
+            ciphertext = self.crypto.encrypt_plaintext(
+                self.session.secret_key, nonce, plaintext
+            )
+            password = self.password_repo.create(
+                Password(None, self.session.user.id, password_name, nonce, ciphertext)
+            )
+            if password:
+                self.session.vault.add_password(password)
+
+    def update_password(self, password_id: int, plaintext: str):
+        """Re-encrypt and persist an updated plaintext value for an existing entry."""
+        # At minnimum you need user_id + password_id to update / delete, besides other values
+        if self.session.is_authenticated():
+            nonce = os.urandom(12)
+            ciphertext = self.crypto.encrypt_plaintext(
+                self.session.secret_key, nonce, plaintext
+            )
+            password = self.get_one_password(password_id)
+            password.nonce = nonce
+            password.ciphertext = ciphertext
+            self.password_repo.update(password)
+            self.session.vault.update_password(password_id, nonce, ciphertext)
+
+    def delete_password(self, password_id: int):
+        """Remove a password from persistent storage and the in-memory vault."""
+        if self.session.is_authenticated():
+            password = self.get_one_password(password_id)
+            # Exceptions in repo/db propagates up to UI and prevents further execution like vault methods
+            self.password_repo.delete(password)
+            self.session.vault.delete_password(password_id)
+
+    def is_authenticated(self):
+        """Return True when a session exists and has not exceeded the idle timeout."""
+        if self.session is None:
+            return False
+
+        return self.session.is_authenticated()
+
+    def login(self, login_field_group: LoginFieldGroup) -> bool:
+        """Verify credentials, derive the vault key, and open an authenticated session."""
+        user = self.user_repo.get_by_username(login_field_group.username_field.value)
+        if user:
+            try:
+                ph = PasswordHasher()
+                result = ph.verify(user.hash, login_field_group.password_field.value)
+                secret_key = self.crypto.derive_secret_key(
+                    user.salt, login_field_group.password_field.value
+                )
+                # Best-effort cleanup; Python does not guarantee memory wiping of strings.
+                del login_field_group
+                vault = self._create_vault(user.id)
+                self.session = Session(user, secret_key, vault, time.monotonic(), True)
+                return result
+            except VerifyMismatchError as e:
+                raise AuthenticationError from e
+
+    def logout(self):
+        """Clear the active session and discard in-memory secrets."""
+        self.session = None
+
+    def create_user(self, create_field_group: CreateUserFieldGroup):
+        """Hash credentials and persist a new user record."""
+        ph = PasswordHasher()
+        salt = os.urandom(16)
+        user = User(
+            id=None,
+            username=create_field_group.username_field.value,
+            email=create_field_group.email_field.value,
+            salt=salt,
+            hash=ph.hash(create_field_group.password_field.value),
+        )
+        self.user_repo.create(user)
+
+    def delete_user(self):
+        """Delete the logged-in user from the db and end the session."""
+        self.user_repo.delete_by_id(self.session.user)
+        self.logout()

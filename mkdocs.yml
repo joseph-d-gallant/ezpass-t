@@ -1,0 +1,16 @@
+site_name: ezpass-t
+site_url: https://joe.d.gallant.github.io/ezpass-t/
+
+nav:
+  - latest: latest.md
+  - releases: releases/index.md
+
+plugins:
+  - search
+  - redirects:
+      redirect_maps:
+        'latest.md': 'releases/v1.0/v1.0.0.md'
+
+extra_css:
+  - stylesheets/extra.css
+  
