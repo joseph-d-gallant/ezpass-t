@@ -20,16 +20,16 @@ class UserRepository:
             except IntegrityError as e:
                 print(e)
 
-    def create(self, username: str, password_hash: str):
+    def create(self, email: str, username: str, password_hash: str):
         with self.conn.cursor() as cursor:
             try:
                 cursor.execute(
                     """
-                    INSERT INTO users (username, password_hash)
-                    VALUES (%s, %s)
+                    INSERT INTO users (email, username, password_hash)
+                    VALUES (%s, %s, %s)
                     RETURNING id, username
                     """,
-                    (username, password_hash),
+                    (email, username, password_hash),
                 )
                 return cursor.fetchone()
             except IntegrityError as e:

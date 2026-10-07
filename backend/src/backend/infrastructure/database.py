@@ -15,6 +15,7 @@ def initialize() -> None:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                email TEXT NOT NULL UNIQUE,
                 username TEXT NOT NULL UNIQUE,
                 password_hash TEXT NOT NULL
             )

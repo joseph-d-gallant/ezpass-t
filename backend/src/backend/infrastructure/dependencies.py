@@ -23,12 +23,14 @@ def get_user_repo(
     return UserRepository(conn)
 
 
-def get_auth(user_repo: Annotated[UserRepository, Depends(get_user_repo)]) -> Auth:
+def get_auth_service(
+    user_repo: Annotated[UserRepository, Depends(get_user_repo)],
+) -> Auth:
     return Auth(user_repo)
 
 
 def require_auth(
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
-    auth: Annotated[Auth, Depends(get_auth)],
+    auth: Annotated[Auth, Depends(get_auth_service)],
 ) -> str:
-    return auth._verify_access_token(credentials.credentials)
+    return auth.verify_access_token(credentials.credentials)

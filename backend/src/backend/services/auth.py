@@ -18,7 +18,7 @@ class Auth:
     def __init__(self, user_repo: UserRepository):
         self.user_repo = user_repo
 
-    def _verify_access_token(self, token: str):
+    def verify_access_token(self, token: str):
         try:
             payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
             user_id = payload.get("sub")
@@ -40,16 +40,16 @@ class Auth:
         try:
             user = self.user_repo.get_by_username(username)
             ph = PasswordHasher()
-            if ph.verify(user[2], password):
+            if ph.verify(user[3], password):
                 access_token = self._create_access_token(user[0])
                 return {"access_token": access_token, "token_type": "bearer"}
         except VerifyMismatchError:
             return {"message": "failed to login."}
 
-    def register(self, username: str, password: str):
+    def register(self, email: str, username: str, password: str):
         ph = PasswordHasher()
         password_hash = ph.hash(password)
-        if self.user_repo.create(username, password_hash):
+        if self.user_repo.create(email, username, password_hash):
             return {"message": "User created."}
         else:
             return {"message": "Failed to create user."}
